@@ -440,6 +440,7 @@
         var FRAME_RETRY_DELAY_MS = 3000;
         var MOVE_INTERVAL_MS = 33;
         var MAX_EVENTS = 64;
+        var LOADING_NOTICE = "Loading…";
 
         var state = {
           threadId: null,
@@ -553,6 +554,8 @@
           var wasControlled = isControlled();
           state.status = next;
           state.loadError = null;
+          // Only the placeholder goes; action, error, and handback notices outlive polls.
+          if ($("notice").textContent === LOADING_NOTICE) setNotice("", false);
           // Reopening the panel re-attaches to a setup job that is still running.
           if (!next.setup.ready && !setup.review && !setup.busy) reviewSetup();
           if (wasControlled && !isControlled()) dropInput();
@@ -1237,7 +1240,7 @@
             content.hidden = true;
             badge.hidden = true;
             if (state.loadError) setNotice(state.loadError, true);
-            else if (!$("notice").textContent) setNotice("Loading…", false);
+            else if (!$("notice").textContent) setNotice(LOADING_NOTICE, false);
             return;
           }
           content.hidden = false;
