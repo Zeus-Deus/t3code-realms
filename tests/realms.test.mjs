@@ -66,13 +66,21 @@ function fakeRuntime({ ready = true } = {}) {
   return { state, call };
 }
 
+// T3 Code's plugin host rejects any storage key outside this pattern (apps/server/src/plugins/PluginHost.ts).
+const HOST_STORAGE_KEY = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
+
+/** In-memory plugin storage that enforces the host's key contract. */
 function memoryStorage() {
   const values = new Map();
+  const checked = (key) => {
+    if (typeof key !== "string" || !HOST_STORAGE_KEY.test(key)) throw new Error("The plugin host request is invalid.");
+    return key;
+  };
   return {
     values,
-    get: async (key) => (values.has(key) ? structuredClone(values.get(key)) : null),
-    set: async (key, value) => void values.set(key, structuredClone(value)),
-    delete: async (key) => void values.delete(key),
+    get: async (key) => (values.has(checked(key)) ? structuredClone(values.get(key)) : null),
+    set: async (key, value) => void values.set(checked(key), structuredClone(value)),
+    delete: async (key) => void values.delete(checked(key)),
   };
 }
 
@@ -435,4 +443,27 @@ test("review r2: long output keeps its tail and says it was shortened", async ()
   const fits = await realms.terminal(me, { jobId: "other" });
   assert.equal(fits.data.stdout.length, 70_007, "output that fits is not cut");
   assert.equal(fits.data.truncated, undefined);
+});
+
+test("storage keys satisfy the host contract for any thread id, including long ones", async () => {
+  const { realms, storage } = await setup();
+  // Thread ids are opaque to Realms: up to 200 non-space characters, including ones the host refuses in keys.
+  const longId = `thread:${"a/b:c".repeat(38)}`.slice(0, 200);
+  const otherId = `${longId.slice(0, 199)}z`;
+  const person = principal(client(longId));
+  const me = principal(agent(longId));
+  assert.equal((await realms.status(person)).mode, "unset");
+  await realms.on(me, {});
+  await realms.off(person);
+  assert.equal((await realms.status(person)).mode, "off");
+  await realms.on(person, {});
+  const taken = await realms.takeControl(person);
+  assert.equal(taken.realm.controlledBy, "user");
+  assert.ok(await realms.badge(person));
+  await realms.handBack(person);
+  assert.equal((await realms.status(person)).realm.controlledBy, null);
+  // A neighbouring thread whose id differs only in its last character keeps its own preference.
+  assert.equal((await realms.status(principal(client(otherId)))).mode, "unset");
+  assert.ok(storage.values.size > 0);
+  for (const key of storage.values.keys()) assert.match(key, HOST_STORAGE_KEY);
 });
