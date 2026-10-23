@@ -1,0 +1,1495 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Realm</title>
+    <style>
+      /*
+       * T3 Code applies its theme as CSS variables on <html> through the plugin bridge
+       * (window.t3). The fallbacks keep the panel readable before the first context arrives.
+       */
+      :root {
+        --bg: var(--color-background-primary, #ffffff);
+        --surface: var(--color-background-secondary, #f6f6f7);
+        --muted-bg: var(--color-background-tertiary, #eeeef0);
+        --fg: var(--color-text-primary, #111113);
+        --muted: var(--color-text-secondary, #5f5f68);
+        --border: var(--color-border-primary, #e3e3e6);
+        --input: var(--color-border-secondary, #d6d6da);
+        --ring: var(--color-ring-primary, #6b6bff);
+        --danger: var(--color-text-danger, #b42318);
+        --success: var(--color-text-success, #15803d);
+        --warning: var(--color-text-warning, #92400e);
+        --radius: var(--border-radius-md, 8px);
+        --font: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+        --mono: var(--font-mono, ui-monospace, monospace);
+        color-scheme: light dark;
+      }
+      html[data-t3-theme="dark"] {
+        --bg: var(--color-background-primary, #0f0f11);
+        --surface: var(--color-background-secondary, #17171a);
+        --muted-bg: var(--color-background-tertiary, #202024);
+        --fg: var(--color-text-primary, #ededef);
+        --muted: var(--color-text-secondary, #a1a1aa);
+        --border: var(--color-border-primary, #26262b);
+        --input: var(--color-border-secondary, #34343a);
+        --danger: var(--color-text-danger, #f87171);
+        --success: var(--color-text-success, #4ade80);
+        --warning: var(--color-text-warning, #fbbf24);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.45 var(--font);
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 10px 12px 24px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      h1 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      h2 {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .spacer {
+        flex: 1;
+      }
+      p {
+        margin: 0;
+      }
+      .hint,
+      .lede {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      section {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
+      }
+      .row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .value {
+        font-size: 12px;
+        text-align: right;
+        overflow-wrap: anywhere;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      button,
+      input,
+      summary {
+        font: inherit;
+        font-size: 12px;
+      }
+      button {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid var(--input);
+        border-radius: calc(var(--radius) - 2px);
+        background: var(--bg);
+        color: var(--fg);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      button:hover:not(:disabled) {
+        background: var(--muted-bg);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button.primary {
+        background: var(--fg);
+        border-color: var(--fg);
+        color: var(--bg);
+      }
+      button.primary:hover:not(:disabled) {
+        background: var(--fg);
+        opacity: 0.9;
+      }
+      button.ghost {
+        border-color: transparent;
+        background: transparent;
+        color: var(--muted);
+      }
+      button.ghost:hover:not(:disabled) {
+        color: var(--fg);
+      }
+      button.danger {
+        color: var(--danger);
+      }
+      input[type="text"] {
+        min-width: 0;
+        height: 28px;
+        padding: 0 8px;
+        border: 1px solid var(--input);
+        border-radius: calc(var(--radius) - 2px);
+        background: var(--bg);
+        color: var(--fg);
+      }
+      :focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 1px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        height: 18px;
+        padding: 0 6px;
+        border-radius: 4px;
+        background: var(--muted-bg);
+        font-size: 11px;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .badge.live {
+        color: var(--success);
+      }
+      .badge.warn {
+        color: var(--warning);
+      }
+      .badge.bad {
+        color: var(--danger);
+      }
+      .notice {
+        font-size: 12px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .notice:empty {
+        display: none;
+      }
+      .notice.error,
+      .error {
+        color: var(--danger);
+      }
+      .box {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px 10px;
+        border-radius: calc(var(--radius) - 2px);
+        background: var(--surface);
+        font-size: 12px;
+      }
+      .banner {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 8px 10px;
+        border: 1px solid var(--warning);
+        border-radius: calc(var(--radius) - 2px);
+        font-weight: 500;
+      }
+      .banner span {
+        flex: 1;
+        min-width: 12em;
+      }
+      .surface {
+        position: relative;
+        width: 100%;
+        min-height: 60px;
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) - 2px);
+        background: var(--surface);
+        overflow: hidden;
+      }
+      .surface img {
+        display: block;
+        width: 100%;
+        height: auto;
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+      .surface.controlled {
+        border-color: var(--warning);
+        touch-action: none;
+        cursor: crosshair;
+      }
+      .surface-empty {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+        background: var(--surface);
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .mono {
+        font-family: var(--mono);
+        font-size: 11px;
+        overflow-wrap: anywhere;
+        user-select: text;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 4px 10px;
+        margin: 0;
+        font-size: 12px;
+      }
+      dt {
+        color: var(--muted);
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      ul.plain {
+        margin: 0;
+        padding-left: 16px;
+      }
+      details {
+        border-top: 1px solid var(--border);
+        padding-top: 8px;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--muted);
+      }
+      details[open] summary {
+        margin-bottom: 8px;
+      }
+      .field {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .field input {
+        flex: 1;
+      }
+      label {
+        font-size: 12px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Realm</h1>
+        <span class="badge" id="state-badge" hidden></span>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" id="refresh">Refresh</button>
+        <button type="button" class="ghost" id="open-realms">All Realms</button>
+      </header>
+      <p class="lede">
+        This thread's private Linux desktop. Its display, input and clipboard are separate from
+        yours. It shares this machine's files and network, so it is not a sandbox, and nothing
+        ever falls back to your own desktop.
+      </p>
+      <div class="notice" id="notice" role="status" aria-live="polite"></div>
+
+      <div class="banner" id="control-banner" role="status" hidden>
+        <span>You have control — the agent is paused.</span>
+        <button type="button" id="banner-handback">Hand back</button>
+      </div>
+
+      <div id="content" hidden>
+        <section aria-labelledby="agent-heading">
+          <div class="row">
+            <h2 id="agent-heading">Agent use</h2>
+            <span class="value" id="mode-text"></span>
+          </div>
+          <p class="hint" id="mode-hint"></p>
+          <div class="actions">
+            <button type="button" id="turn-on">Turn on</button>
+            <button type="button" id="turn-off">Turn off</button>
+          </div>
+        </section>
+
+        <section aria-labelledby="desktop-heading">
+          <div class="row">
+            <h2 id="desktop-heading">Desktop</h2>
+            <span class="value" id="desktop-text"></span>
+          </div>
+          <p class="hint" id="desktop-hint"></p>
+          <p class="hint error" id="desktop-error" hidden></p>
+          <div class="actions">
+            <button type="button" id="start">Start</button>
+            <button type="button" id="stop">Stop…</button>
+          </div>
+          <div class="box" id="stop-confirm" hidden>
+            <p>
+              Stop this desktop? Its apps close and unsaved app work is lost. The workspace is
+              kept. This is not the same as turning agent use off.
+            </p>
+            <div class="actions">
+              <button type="button" class="ghost" id="stop-cancel">Cancel</button>
+              <button type="button" class="danger" id="stop-confirm-button">Stop desktop</button>
+            </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="watch-heading" id="watch-section" hidden>
+          <div class="row">
+            <h2 id="watch-heading">Watch</h2>
+            <span class="hint" id="frame-meta"></span>
+          </div>
+          <div class="surface" id="surface">
+            <img id="frame" alt="" draggable="false" hidden />
+            <div class="surface-empty" id="surface-empty"></div>
+          </div>
+          <div class="actions">
+            <button type="button" id="watch" aria-pressed="true">Pause</button>
+            <button type="button" id="take">Take control</button>
+            <button type="button" id="handback" hidden>Hand back</button>
+          </div>
+          <div class="field" id="typer" hidden>
+            <input
+              type="text"
+              id="type-text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-label="Text to type into the Realm"
+              placeholder="Type text into the Realm"
+            />
+            <button type="button" id="type-send">Type</button>
+          </div>
+          <p class="hint" id="watch-hint"></p>
+        </section>
+
+        <details id="more">
+          <summary>Desktop size and repair</summary>
+          <div class="box">
+            <label for="size-input">Desktop size (width x height)</label>
+            <div class="field">
+              <input
+                type="text"
+                id="size-input"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="1600x900"
+                aria-describedby="size-hint"
+              />
+              <button type="button" id="size-apply">Apply</button>
+            </div>
+            <p class="hint" id="size-hint">Applies to the running desktop.</p>
+          </div>
+          <div class="box" style="margin-top: 8px">
+            <p class="hint">
+              If the agent's clicks stop reaching apps, reset the GUI driver connection. Nothing
+              is replayed; the agent takes a fresh capture next.
+            </p>
+            <div class="actions">
+              <button type="button" id="repair">Reset GUI driver connection</button>
+            </div>
+          </div>
+        </details>
+
+        <section aria-labelledby="setup-heading" id="setup-section" hidden>
+          <h2 id="setup-heading">Setup</h2>
+          <div id="setup"></div>
+        </section>
+      </div>
+    </main>
+    <script>
+      (function () {
+        "use strict";
+        var bridge = window.t3;
+        var $ = function (id) {
+          return document.getElementById(id);
+        };
+        var FRAME_INTERVAL_MS = 1000;
+        var CONTROL_FRAME_INTERVAL_MS = 500;
+        var FRAME_RETRY_DELAY_MS = 3000;
+        var MOVE_INTERVAL_MS = 33;
+        var MAX_EVENTS = 64;
+
+        var state = {
+          threadId: null,
+          status: null,
+          loadError: null,
+          busy: null,
+          watching: true,
+          frameAt: null,
+          frameError: null,
+          frameDesktop: null,
+          confirmStop: false,
+          statusInFlight: false,
+          statusAgain: false,
+        };
+        var timers = { status: null, frame: null, move: null, job: null };
+        var frameInFlight = false;
+        var lastFrameRequest = 0;
+        var input = { buffer: [], inFlight: false, pressed: {}, last: null, wheel: 0 };
+        var setup = { review: null, job: null, busy: false, error: null };
+
+        // ---- helpers -------------------------------------------------------------------
+
+        function el(tag, attrs, children) {
+          var node = document.createElement(tag);
+          for (var key in attrs || {}) {
+            var value = attrs[key];
+            if (value === null || value === undefined || value === false) continue;
+            if (key === "text") node.textContent = value;
+            else if (key === "onclick") node.addEventListener("click", value);
+            else if (key === "disabled") node.disabled = true;
+            else node.setAttribute(key, value);
+          }
+          (children || []).forEach(function (child) {
+            if (child) node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+          });
+          return node;
+        }
+
+        /** Plugin errors read "[code] sentence": agents use the code, people read the sentence. */
+        function parseError(error) {
+          var message = String((error && error.message) || "Request failed.");
+          var match = /^\[([a-z_]+)\]\s*([\s\S]*)$/.exec(message);
+          return match
+            ? { code: match[1], text: match[2] }
+            : { code: (error && error.reason) || "failed", text: message };
+        }
+
+        function setNotice(text, isError) {
+          $("notice").textContent = text || "";
+          $("notice").className = isError ? "notice error" : "notice";
+        }
+
+        function call(name, payload) {
+          if (!bridge) return Promise.reject(new Error("Open this panel inside T3 Code."));
+          return bridge.invoke(name, payload);
+        }
+
+        function parseSize(size) {
+          var match = /^(\d+)x(\d+)$/.exec(String(size || ""));
+          return match ? { w: Number(match[1]), h: Number(match[2]) } : null;
+        }
+
+        function visible() {
+          return document.visibilityState === "visible";
+        }
+
+        function realm() {
+          return state.status && state.status.realm;
+        }
+        function isLive() {
+          var r = realm();
+          return Boolean(r && r.state === "live");
+        }
+        function isControlled() {
+          var r = realm();
+          return Boolean(isLive() && r.controlledBy === "user");
+        }
+        function isTransitional() {
+          var r = realm();
+          return Boolean(
+            (state.status && state.status.starting) ||
+              (r && (r.state === "starting" || r.state === "stopping")),
+          );
+        }
+
+        // Python runtime timestamps are epoch seconds.
+        function clock(seconds) {
+          return new Date(seconds * 1000).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          });
+        }
+        function minutes(seconds) {
+          if (!seconds) return null;
+          var m = Math.round(seconds / 60);
+          return m >= 60 && m % 60 === 0 ? m / 60 + " h" : m + " min";
+        }
+
+        // ---- status --------------------------------------------------------------------
+
+        function scheduleStatus() {
+          clearTimeout(timers.status);
+          timers.status = null;
+          if (!visible() || !state.threadId) return;
+          timers.status = setTimeout(refresh, isTransitional() ? 1500 : 10000);
+        }
+
+        function applyStatus(next) {
+          if (!next || next.threadId !== state.threadId) return;
+          var wasControlled = isControlled();
+          state.status = next;
+          state.loadError = null;
+          // Reopening the panel re-attaches to a setup job that is still running.
+          if (!next.setup.ready && !setup.review && !setup.busy) reviewSetup();
+          if (wasControlled && !isControlled()) dropInput();
+          render();
+          pumpFrames();
+        }
+
+        function refresh() {
+          if (!state.threadId) return;
+          if (state.statusInFlight) {
+            state.statusAgain = true;
+            return;
+          }
+          state.statusInFlight = true;
+          var threadId = state.threadId;
+          call("status")
+            .then(
+              function (result) {
+                applyStatus(result && result.data);
+              },
+              function (error) {
+                if (threadId !== state.threadId) return;
+                var failure = parseError(error);
+                if (failure.code === "busy") return;
+                if (!state.status) state.loadError = failure.text;
+                else setNotice(failure.text, true);
+                render();
+              },
+            )
+            .then(function () {
+              state.statusInFlight = false;
+              if (state.statusAgain) {
+                state.statusAgain = false;
+                refresh();
+              } else scheduleStatus();
+            });
+        }
+
+        var NEXT_STEP = {
+          setup_required: "Finish setup below, then try again.",
+          not_running: "Start the desktop first.",
+          not_controlled: "Take control again to send input.",
+          starting: "It is still starting; this panel checks again shortly.",
+          timeout: "Try again.",
+          cancelled: "Try again.",
+        };
+
+        function act(name, payload, pending) {
+          if (state.busy) return Promise.resolve();
+          state.busy = name;
+          if (pending) setNotice(pending, false);
+          render();
+          var threadId = state.threadId;
+          return call(name, payload)
+            .then(
+              function (result) {
+                if (threadId !== state.threadId) return;
+                if (result && result.data && result.data.threadId) applyStatus(result.data);
+                setNotice((result && result.message) || "", false);
+                return result;
+              },
+              function (error) {
+                if (threadId !== state.threadId) return;
+                var failure = parseError(error);
+                var step = NEXT_STEP[failure.code];
+                setNotice(failure.text + (step && failure.text.indexOf(step) < 0 ? " " + step : ""), true);
+                if (failure.code === "setup_required") reviewSetup();
+                refresh();
+              },
+            )
+            .then(function (result) {
+              state.busy = null;
+              render();
+              scheduleStatus();
+              return result;
+            });
+        }
+
+        // ---- watching ------------------------------------------------------------------
+
+        function wantFrames() {
+          return Boolean(
+            isLive() && visible() && (state.watching || isControlled()) && !state.frameError,
+          );
+        }
+
+        function frameScale() {
+          var desktop = state.frameDesktop || parseSize(realm() && realm().size);
+          var width = $("surface").clientWidth * (window.devicePixelRatio || 1);
+          if (!desktop || !width) return 0.5;
+          return Math.min(1, Math.max(0.1, Math.ceil((width / desktop.w) * 20) / 20));
+        }
+
+        function showFrame(image) {
+          var img = $("frame");
+          return new Promise(function (resolve) {
+            var done = function () {
+              img.onload = img.onerror = null;
+              resolve();
+            };
+            img.onload = done;
+            img.onerror = done;
+            img.src = "data:" + image.mimeType + ";base64," + image.data;
+          });
+        }
+
+        // The next capture is requested only after the previous one rendered, so a slow
+        // connection lowers the frame rate instead of queueing requests.
+        function pumpFrames() {
+          if (!wantFrames() || frameInFlight || timers.frame) return;
+          var interval = isControlled() ? CONTROL_FRAME_INTERVAL_MS : FRAME_INTERVAL_MS;
+          var wait = lastFrameRequest + interval - Date.now();
+          if (wait > 0) {
+            timers.frame = setTimeout(function () {
+              timers.frame = null;
+              pumpFrames();
+            }, wait);
+            return;
+          }
+          frameInFlight = true;
+          lastFrameRequest = Date.now();
+          var threadId = state.threadId;
+          call("frame", { scale: frameScale() })
+            .then(function (result) {
+              if (threadId !== state.threadId) return;
+              var image = result && result.images && result.images[0];
+              if (!image) throw new Error("The capture returned no image.");
+              state.frameDesktop = parseSize(result.data && result.data.size) || state.frameDesktop;
+              return showFrame(image).then(function () {
+                if (threadId !== state.threadId) return;
+                state.frameAt = new Date().toLocaleTimeString();
+                $("frame").hidden = false;
+                renderWatch();
+              });
+            })
+            .catch(function (error) {
+              if (threadId !== state.threadId) return;
+              var failure = parseError(error);
+              if (failure.code === "busy") return;
+              if (failure.code === "not_running") refresh();
+              // A slow start elsewhere or a dropped request is transient: wait and try again
+              // instead of stopping the view, especially while the person holds control.
+              else if (failure.code === "timeout" || failure.code === "cancelled" || failure.code === "starting")
+                lastFrameRequest = Date.now() + FRAME_RETRY_DELAY_MS;
+              else state.frameError = failure.text;
+              renderWatch();
+            })
+            .then(function () {
+              frameInFlight = false;
+              pumpFrames();
+            });
+        }
+
+        function stopFrames() {
+          clearTimeout(timers.frame);
+          timers.frame = null;
+        }
+
+        // ---- control -------------------------------------------------------------------
+
+        function desktopSize() {
+          return state.frameDesktop || parseSize(realm() && realm().size);
+        }
+
+        function desktopPoint(event) {
+          var rect = $("frame").getBoundingClientRect();
+          var desktop = desktopSize();
+          if (!desktop || !rect.width || !rect.height) return null;
+          var x = ((event.clientX - rect.left) / rect.width) * desktop.w;
+          var y = ((event.clientY - rect.top) / rect.height) * desktop.h;
+          return {
+            x: Math.max(0, Math.min(desktop.w - 1, Math.round(x))),
+            y: Math.max(0, Math.min(desktop.h - 1, Math.round(y))),
+          };
+        }
+
+        // DOM: 1 left, 2 right, 4 middle. X/RFB: 1 left, 2 middle, 4 right.
+        function xButtons(buttons) {
+          return (buttons & 1 ? 1 : 0) | (buttons & 4 ? 2 : 0) | (buttons & 2 ? 4 : 0);
+        }
+
+        function enqueue(event, immediate) {
+          var buffer = input.buffer;
+          var last = buffer[buffer.length - 1];
+          if (
+            !immediate &&
+            event.type === "pointer" &&
+            last &&
+            last.type === "pointer" &&
+            last.buttons === event.buttons &&
+            last.move
+          ) {
+            buffer[buffer.length - 1] = event;
+          } else {
+            buffer.push(event);
+          }
+          if (buffer.length > 1024) {
+            dropInput();
+            setNotice("Input fell too far behind and was dropped. Check the desktop before continuing.", true);
+            return;
+          }
+          if (immediate) {
+            clearTimeout(timers.move);
+            timers.move = null;
+            flushInput();
+          } else if (!timers.move) {
+            timers.move = setTimeout(function () {
+              timers.move = null;
+              flushInput();
+            }, MOVE_INTERVAL_MS);
+          }
+        }
+
+        // At most one input request is in flight; everything else coalesces into the next one.
+        function flushInput() {
+          if (input.inFlight || input.buffer.length === 0 || !isControlled()) return;
+          var batch = input.buffer.splice(0, MAX_EVENTS).map(function (event) {
+            return event.type === "pointer"
+              ? { type: "pointer", x: event.x, y: event.y, buttons: event.buttons }
+              : event;
+          });
+          input.inFlight = true;
+          var threadId = state.threadId;
+          call("input", { events: batch })
+            .catch(function (error) {
+              if (threadId !== state.threadId) return;
+              var failure = parseError(error);
+              input.buffer = [];
+              // Input racing a handback is expected; only report it while we still think we hold control.
+              if (failure.code === "not_controlled" && (state.busy === "handback" || !isControlled())) return;
+              setNotice(failure.text + (NEXT_STEP[failure.code] ? " " + NEXT_STEP[failure.code] : ""), true);
+              if (failure.code === "not_controlled" || failure.code === "not_running") refresh();
+            })
+            .then(function () {
+              input.inFlight = false;
+              if (input.buffer.length) flushInput();
+            });
+        }
+
+        function dropInput() {
+          input.buffer = [];
+          input.pressed = {};
+          clearTimeout(timers.move);
+          timers.move = null;
+        }
+
+        function pointer(event, immediate, extra) {
+          var point = desktopPoint(event);
+          if (!point) return;
+          var buttons = xButtons(event.buttons) | (extra || 0);
+          input.last = { x: point.x, y: point.y, buttons: xButtons(event.buttons) };
+          enqueue({ type: "pointer", x: point.x, y: point.y, buttons: buttons, move: !immediate }, immediate);
+        }
+
+        var NAMED_KEYS = {
+          Enter: 0xff0d,
+          Backspace: 0xff08,
+          Tab: 0xff09,
+          Escape: 0xff1b,
+          Delete: 0xffff,
+          Insert: 0xff63,
+          Home: 0xff50,
+          End: 0xff57,
+          PageUp: 0xff55,
+          PageDown: 0xff56,
+          ArrowLeft: 0xff51,
+          ArrowUp: 0xff52,
+          ArrowRight: 0xff53,
+          ArrowDown: 0xff54,
+          CapsLock: 0xffe5,
+          ContextMenu: 0xff67,
+        };
+        var MODIFIER_KEYS = {
+          Shift: [0xffe1, 0xffe2],
+          Control: [0xffe3, 0xffe4],
+          Alt: [0xffe9, 0xffea],
+          Meta: [0xffeb, 0xffec],
+          OS: [0xffeb, 0xffec],
+        };
+
+        function charKeysym(character) {
+          var cp = character.codePointAt(0);
+          if ((cp >= 0x20 && cp <= 0x7e) || (cp >= 0xa0 && cp <= 0xff)) return cp;
+          return 0x01000000 + cp;
+        }
+
+        function keysym(event) {
+          var key = event.key;
+          if (NAMED_KEYS[key]) return NAMED_KEYS[key];
+          if (MODIFIER_KEYS[key]) return MODIFIER_KEYS[key][event.location === 2 ? 1 : 0];
+          var f = /^F([1-9]|1[0-2])$/.exec(key);
+          if (f) return 0xffbe + Number(f[1]) - 1;
+          if (Array.from(key).length === 1) return charKeysym(key);
+          return null;
+        }
+
+        function releaseKeys() {
+          Object.keys(input.pressed).forEach(function (code) {
+            enqueue({ type: "key", keysym: input.pressed[code], down: false }, true);
+          });
+          input.pressed = {};
+        }
+
+        function typeText(text) {
+          Array.from(text).forEach(function (character) {
+            var sym = character === "\n" ? 0xff0d : charKeysym(character);
+            enqueue({ type: "key", keysym: sym, down: true }, false);
+            enqueue({ type: "key", keysym: sym, down: false }, false);
+          });
+          clearTimeout(timers.move);
+          timers.move = null;
+          flushInput();
+        }
+
+        function wireSurface() {
+          var surface = $("surface");
+          surface.addEventListener("pointerdown", function (event) {
+            if (!isControlled() || $("frame").hidden) return;
+            event.preventDefault();
+            surface.focus({ preventScroll: true });
+            try {
+              surface.setPointerCapture(event.pointerId);
+            } catch (_) {}
+            pointer(event, true);
+          });
+          surface.addEventListener("pointermove", function (event) {
+            if (!isControlled() || $("frame").hidden) return;
+            pointer(event, false);
+          });
+          ["pointerup", "pointercancel"].forEach(function (type) {
+            surface.addEventListener(type, function (event) {
+              if (!isControlled() || $("frame").hidden) return;
+              event.preventDefault();
+              pointer(event, true);
+            });
+          });
+          surface.addEventListener("contextmenu", function (event) {
+            if (isControlled()) event.preventDefault();
+          });
+          surface.addEventListener(
+            "wheel",
+            function (event) {
+              if (!isControlled() || $("frame").hidden) return;
+              event.preventDefault();
+              input.wheel += event.deltaMode === 0 ? event.deltaY : event.deltaY * 40;
+              var steps = 0;
+              while (Math.abs(input.wheel) >= 50 && steps < 5) {
+                var button = input.wheel < 0 ? 8 : 16;
+                input.wheel -= input.wheel < 0 ? -50 : 50;
+                var point = desktopPoint(event);
+                if (!point) return;
+                var held = xButtons(event.buttons);
+                enqueue({ type: "pointer", x: point.x, y: point.y, buttons: held | button }, true);
+                enqueue({ type: "pointer", x: point.x, y: point.y, buttons: held }, true);
+                steps += 1;
+              }
+              if (steps === 5) input.wheel = 0;
+            },
+            { passive: false },
+          );
+          surface.addEventListener("keydown", function (event) {
+            if (!isControlled()) return;
+            if (event.key === "Escape" && event.shiftKey) {
+              event.preventDefault();
+              releaseKeys();
+              $("handback").focus();
+              setNotice("Keyboard released from the Realm. You still have control.", false);
+              return;
+            }
+            if (event.isComposing || event.key === "Dead" || event.key === "Process") return;
+            var sym = keysym(event);
+            if (sym === null) return;
+            event.preventDefault();
+            input.pressed[event.code || event.key] = sym;
+            enqueue({ type: "key", keysym: sym, down: true }, true);
+          });
+          surface.addEventListener("keyup", function (event) {
+            if (!isControlled()) return;
+            var id = event.code || event.key;
+            var sym = input.pressed[id];
+            if (sym === undefined) return;
+            event.preventDefault();
+            delete input.pressed[id];
+            enqueue({ type: "key", keysym: sym, down: false }, true);
+          });
+          // Losing focus releases held keys so nothing sticks; it never hands control back.
+          surface.addEventListener("blur", function () {
+            if (isControlled()) releaseKeys();
+          });
+        }
+
+        // ---- setup ---------------------------------------------------------------------
+
+        function jobActive(job) {
+          return Boolean(job && (job.state === "queued" || job.state === "running"));
+        }
+
+        function reviewSetup() {
+          setup.busy = true;
+          setup.error = null;
+          renderSetup();
+          return call("setup-review")
+            .then(
+              function (result) {
+                setup.review = result.data;
+                if (result.data.job) setup.job = result.data.job;
+                pollJob();
+              },
+              function (error) {
+                setup.error = parseError(error).text;
+              },
+            )
+            .then(function () {
+              setup.busy = false;
+              renderSetup();
+            });
+        }
+
+        function startSetup() {
+          setup.busy = true;
+          setup.error = null;
+          renderSetup();
+          call("setup-start", { reviewId: setup.review.reviewId })
+            .then(
+              function (result) {
+                if (result.data && result.data.jobId) {
+                  setup.job = { job_id: result.data.jobId, state: "queued" };
+                  pollJob();
+                } else {
+                  setNotice(result.message || "", false);
+                  return reviewSetup().then(refresh);
+                }
+              },
+              function (error) {
+                var failure = parseError(error);
+                setup.error = failure.text;
+                if (failure.code === "changed") return reviewSetup();
+              },
+            )
+            .then(function () {
+              setup.busy = false;
+              renderSetup();
+            });
+        }
+
+        function pollJob() {
+          clearTimeout(timers.job);
+          timers.job = null;
+          if (!jobActive(setup.job) || !visible()) return;
+          timers.job = setTimeout(function () {
+            timers.job = null;
+            call("job-status", { jobId: setup.job.job_id }).then(
+              function (result) {
+                setup.job = result.data;
+                renderSetup();
+                if (jobActive(setup.job)) pollJob();
+                else {
+                  if (setup.job.state === "succeeded") setNotice("Setup complete. You can turn the Realm on.", false);
+                  reviewSetup().then(refresh);
+                }
+              },
+              function (error) {
+                var failure = parseError(error);
+                if (failure.code !== "busy") setup.error = failure.text;
+                renderSetup();
+                pollJob();
+              },
+            );
+          }, 1000);
+        }
+
+        function cancelJob() {
+          setup.busy = true;
+          renderSetup();
+          call("job-cancel", { jobId: setup.job.job_id })
+            .then(
+              function (result) {
+                if (result.data && result.data.state) setup.job = result.data;
+              },
+              function (error) {
+                setup.error = parseError(error).text;
+              },
+            )
+            .then(function () {
+              setup.busy = false;
+              renderSetup();
+              pollJob();
+            });
+        }
+
+        // A missing driver is what setup installs; everything else needs the system's package manager.
+        function systemBlockers(review) {
+          return (review.missing || []).filter(function (name) {
+            return name !== "verified cua-driver";
+          });
+        }
+
+        function renderSetup() {
+          var container = $("setup");
+          var status = state.status;
+          var review = setup.review;
+          var job = setup.job;
+          var active = jobActive(job);
+          $("setup-section").hidden = !(active || (status && !status.setup.ready) || (review && !review.ready));
+          var nodes = [];
+          var summary = review ? review.message : status && status.setup.message;
+          nodes.push(
+            el("p", {
+              class: "hint",
+              text:
+                (review && review.ready) || (status && status.setup.ready && !active)
+                  ? "Setup is complete on this machine."
+                  : "Realms need a one-time setup on the machine running T3 Code. A person reviews and approves it here." +
+                    (summary ? " " + summary + "." : ""),
+            }),
+          );
+          if (review) {
+            var blockers = systemBlockers(review);
+            var driver = review.driver || {};
+            if (blockers.length) {
+              nodes.push(
+                el("div", { class: "box", role: "note" }, [
+                  el("strong", { text: "Blocked: missing on this machine" }),
+                  el(
+                    "ul",
+                    { class: "plain mono" },
+                    blockers.map(function (name) {
+                      return el("li", { text: name === "systemd_user" ? "systemd user session" : name });
+                    }),
+                  ),
+                  el("span", {
+                    class: "hint",
+                    text: "Install these with your system package manager, then review again. Realms never runs sudo or system installers.",
+                  }),
+                ]),
+              );
+            }
+            nodes.push(
+              el("dl", {}, [
+                el("dt", { text: "Machine" }),
+                el("dd", { text: [review.platform, review.arch].filter(Boolean).join(" · ") || "Unknown" }),
+                el("dt", { text: "systemd user" }),
+                el("dd", { text: review.systemdUser === true ? "Available" : review.systemdUser === false ? "Not available" : "Unknown" }),
+                el("dt", { text: "GUI driver" }),
+                el("dd", { text: "cua-driver " + driver.version + " (pinned) · " + (driver.installed ? "installed and verified" : "not installed") }),
+                el("dt", { text: "SHA-256" }),
+                el("dd", { class: "mono", text: driver.archiveSha256 }),
+                el("dt", { text: "Download" }),
+                el("dd", { class: "mono", text: driver.url }),
+                el("dt", { text: "Installs to" }),
+                el("dd", { class: "mono", text: driver.destination }),
+              ]),
+            );
+          }
+          if (job) {
+            var progress = typeof job.progress === "string" ? " (" + job.progress + ")" : "";
+            var line =
+              job.state === "queued"
+                ? "Driver install queued…"
+                : job.state === "running"
+                  ? "Installing driver" + progress + "…"
+                  : job.state === "succeeded"
+                    ? "Driver installed."
+                    : job.state === "cancelled"
+                      ? "Driver install cancelled."
+                      : "Driver install failed: " + (job.error || job.code || "unknown error") + ". Review and try again.";
+            if (active || (review && !review.ready))
+              nodes.push(el("p", { class: job.state === "failed" ? "error" : "hint", text: line }));
+          }
+          if (setup.error) nodes.push(el("p", { class: "error", text: setup.error }));
+          var canApprove =
+            review &&
+            !review.ready &&
+            !active &&
+            !setup.busy &&
+            systemBlockers(review).length === 0 &&
+            !(review.driver && review.driver.installed);
+          nodes.push(
+            el("div", { class: "actions" }, [
+              review && !review.ready && !active
+                ? el("button", {
+                    type: "button",
+                    class: "primary",
+                    disabled: !canApprove,
+                    text: job && job.state === "failed" ? "Retry install" : "Approve and install driver",
+                    onclick: startSetup,
+                  })
+                : null,
+              active
+                ? el("button", { type: "button", disabled: setup.busy, text: "Cancel install", onclick: cancelJob })
+                : null,
+              el("button", {
+                type: "button",
+                disabled: setup.busy,
+                text: setup.busy && !active ? "Reviewing…" : review ? "Review again" : "Review setup",
+                onclick: reviewSetup,
+              }),
+            ]),
+          );
+          container.replaceChildren.apply(container, nodes);
+        }
+
+        // ---- rendering -----------------------------------------------------------------
+
+        var STATE_LABELS = {
+          live: "Live",
+          starting: "Starting…",
+          stopping: "Stopping…",
+          stopped: "Stopped",
+          cleanup_failed: "Cleanup failed",
+          deleting: "Deleting…",
+        };
+
+        function renderWatch() {
+          var controlled = isControlled();
+          var live = isLive();
+          $("watch-section").hidden = !live;
+          $("control-banner").hidden = !controlled;
+          var surface = $("surface");
+          surface.classList.toggle("controlled", controlled);
+          surface.tabIndex = controlled ? 0 : -1;
+          if (controlled) {
+            surface.setAttribute("role", "application");
+            surface.setAttribute(
+              "aria-label",
+              "Realm desktop. Pointer and keyboard go to the Realm. Shift+Escape releases the keyboard.",
+            );
+          } else {
+            surface.removeAttribute("role");
+            surface.removeAttribute("aria-label");
+          }
+          $("frame").alt = "Latest capture of this thread's Realm desktop";
+          // A paused view keeps its last capture; errors and missing frames cover it.
+          var showing = !$("frame").hidden;
+          var empty = state.frameError
+            ? "Capture failed: " + state.frameError
+            : showing
+              ? ""
+              : !visible()
+                ? "Paused while this panel is hidden."
+                : !state.watching && !controlled
+                  ? "Watching is paused."
+                  : "Loading the first capture…";
+          $("surface-empty").textContent = empty;
+          $("surface-empty").hidden = empty === "";
+          var desktop = desktopSize();
+          surface.style.aspectRatio = desktop ? desktop.w + " / " + desktop.h : "";
+          $("frame-meta").textContent =
+            state.frameError || (!state.watching && !controlled)
+              ? "Paused"
+              : state.frameAt
+                ? "Captured " + state.frameAt
+                : "";
+          var watchButton = $("watch");
+          watchButton.textContent = state.frameError ? "Retry" : state.watching ? "Pause" : "Watch";
+          watchButton.setAttribute("aria-pressed", String(state.watching && !state.frameError));
+          watchButton.hidden = controlled && !state.frameError;
+          $("take").hidden = controlled;
+          $("take").disabled = Boolean(state.busy) || !live;
+          $("handback").hidden = !controlled;
+          $("handback").disabled = Boolean(state.busy);
+          $("banner-handback").disabled = Boolean(state.busy);
+          $("typer").hidden = !controlled;
+          $("watch-hint").textContent = controlled
+            ? "Your pointer and keys go to the Realm while the desktop is focused. Shift+Esc releases the keyboard. Leaving or closing this panel does not hand control back."
+            : "View-only. Frames are periodic captures, about one a second while this panel is visible, not a video stream.";
+        }
+
+        function render() {
+          var status = state.status;
+          var content = $("content");
+          var badge = $("state-badge");
+          if (!state.threadId) {
+            $("control-banner").hidden = true;
+            content.hidden = true;
+            badge.hidden = true;
+            setNotice(bridge ? "Open a thread to see its Realm." : "Open this panel inside T3 Code.", false);
+            return;
+          }
+          if (!status) {
+            $("control-banner").hidden = true;
+            content.hidden = true;
+            badge.hidden = true;
+            if (state.loadError) setNotice(state.loadError, true);
+            else if (!$("notice").textContent) setNotice("Loading…", false);
+            return;
+          }
+          content.hidden = false;
+          var r = status.realm;
+          var live = isLive();
+          var starting = Boolean(status.starting || (r && r.state === "starting"));
+          var busy = state.busy;
+          var ready = status.setup.ready;
+
+          var badgeState = starting ? "starting" : r ? r.state : null;
+          badge.hidden = !badgeState;
+          badge.textContent = STATE_LABELS[badgeState] || badgeState || "";
+          badge.className =
+            "badge" +
+            (badgeState === "live" ? " live" : badgeState === "cleanup_failed" ? " bad" : starting ? " warn" : "");
+
+          var mode = status.mode;
+          $("mode-text").textContent =
+            mode === "realm"
+              ? "On"
+              : mode === "off"
+                ? status.offBy === "agent"
+                  ? "Off · turned off by the agent"
+                  : status.offBy === "user"
+                    ? "Off · turned off by you"
+                    : "Off"
+                : "Not turned on";
+          $("mode-hint").textContent =
+            mode === "realm"
+              ? "The agent may use this desktop. Turning off stops agent use only; the desktop, its workspace and watching stay."
+              : mode === "off" && status.offBy === "user"
+                ? "The agent cannot use the Realm until you turn it on. The desktop and its workspace stay."
+                : mode === "off"
+                  ? "The agent stopped using the Realm and can turn it back on. The desktop and its workspace stay."
+                  : "The agent can turn it on when it needs a desktop, or you can. Turning on starts the desktop.";
+          var turnOn = $("turn-on");
+          turnOn.hidden = mode === "realm";
+          turnOn.disabled = Boolean(busy) || !ready;
+          turnOn.textContent = busy === "on" ? "Turning on…" : "Turn on";
+          turnOn.title = ready ? "" : "Finish setup first";
+          var turnOff = $("turn-off");
+          turnOff.hidden = mode === "off";
+          turnOff.disabled = Boolean(busy);
+          turnOff.textContent = busy === "off" ? "Turning off…" : "Turn off";
+
+          var desktopText = "Not started";
+          var desktopHint = mode === "realm" ? "Start it here, or the agent starts it when needed." : "Turning on starts it.";
+          if (starting) {
+            var progress = status.starting && typeof status.starting.progress === "string" ? " " + status.starting.progress : "";
+            desktopText = "Starting…" + progress;
+            desktopHint = "Checking again every few seconds.";
+          } else if (r) {
+            desktopText = STATE_LABELS[r.state] || r.state;
+            if (live) {
+              desktopText +=
+                (r.size ? " · " + r.size.replace("x", "×") : "") +
+                (r.windowCount === null || r.windowCount === undefined
+                  ? ""
+                  : " · " + r.windowCount + (r.windowCount === 1 ? " window" : " windows"));
+              var idle = minutes(r.idleTtlSeconds);
+              desktopHint =
+                (idle ? "Stops after " + idle + " without agent or viewer activity. " : "") +
+                "Stop ends its apps; save app work first. The workspace is kept.";
+            } else if (r.state === "stopped") {
+              desktopHint =
+                "Its workspace is kept" +
+                (r.lastActivity ? " (last active " + clock(r.lastActivity) + ")" : "") +
+                "." +
+                (mode === "realm" ? " The agent starts it again when it needs it." : "");
+            } else if (r.state === "cleanup_failed") {
+              desktopHint = "Stop again to retry cleanup.";
+            } else {
+              desktopHint = "Checking again every few seconds.";
+            }
+          }
+          $("desktop-text").textContent = desktopText;
+          $("desktop-hint").textContent = desktopHint;
+          $("desktop-error").hidden = !(r && r.error);
+          $("desktop-error").textContent = (r && r.error) || "";
+          var start = $("start");
+          start.hidden = mode !== "realm" || live || starting || (r && r.state === "stopping");
+          start.disabled = Boolean(busy) || !ready;
+          start.textContent = busy === "on" ? "Starting…" : "Start";
+          var stoppable = live || starting || (r && r.state === "cleanup_failed");
+          var stop = $("stop");
+          stop.hidden = !stoppable;
+          stop.disabled = Boolean(busy);
+          stop.textContent = busy === "stop" ? "Stopping…" : "Stop…";
+          if (!stoppable) state.confirmStop = false;
+          $("stop-confirm").hidden = !state.confirmStop;
+          $("stop-confirm-button").disabled = Boolean(busy);
+
+          $("more").hidden = !live;
+          var sizeInput = $("size-input");
+          if (document.activeElement !== sizeInput && r && r.size && !sizeInput.dataset.edited) sizeInput.value = r.size;
+          $("size-apply").disabled = Boolean(busy) || !live;
+          $("repair").disabled = Boolean(busy) || !live;
+
+          renderWatch();
+          renderSetup();
+        }
+
+        // ---- wiring --------------------------------------------------------------------
+
+        $("refresh").addEventListener("click", function () {
+          setNotice("", false);
+          state.frameError = null;
+          refresh();
+          if (setup.review) reviewSetup();
+          pumpFrames();
+        });
+        $("open-realms").addEventListener("click", function () {
+          call("open-realms").catch(function (error) {
+            setNotice(parseError(error).text, true);
+          });
+        });
+        $("turn-on").addEventListener("click", function () {
+          act("on", { kind: "realm" }, "Turning on and starting the desktop. This can take up to 20 seconds.");
+        });
+        $("turn-off").addEventListener("click", function () {
+          act("off", {}, "Turning off agent use…");
+        });
+        $("start").addEventListener("click", function () {
+          act("on", { kind: "realm" }, "Starting the desktop. This can take up to 20 seconds.");
+        });
+        $("stop").addEventListener("click", function () {
+          state.confirmStop = true;
+          render();
+          $("stop-cancel").focus();
+        });
+        $("stop-cancel").addEventListener("click", function () {
+          state.confirmStop = false;
+          render();
+          $("stop").focus();
+        });
+        $("stop-confirm-button").addEventListener("click", function () {
+          state.confirmStop = false;
+          dropInput();
+          act("stop", {}, "Stopping the desktop…").then(function () {
+            if (!$("stop").hidden) $("stop").focus();
+          });
+        });
+        $("watch").addEventListener("click", function () {
+          if (state.frameError) {
+            state.frameError = null;
+            state.watching = true;
+          } else state.watching = !state.watching;
+          if (!state.watching) stopFrames();
+          renderWatch();
+          pumpFrames();
+        });
+        $("take").addEventListener("click", function () {
+          state.frameError = null;
+          act("take", {}, "Taking control…").then(function () {
+            if (isControlled()) {
+              setNotice("You have control. Click the desktop to focus it.", false);
+              $("surface").focus({ preventScroll: true });
+            }
+            pumpFrames();
+          });
+        });
+        function handBack() {
+          releaseKeys();
+          flushInput();
+          act("handback", {}, "Handing control back…").then(function () {
+            if (!isControlled()) {
+              dropInput();
+              setNotice("Control handed back. The agent can use the Realm again.", false);
+              $("take").focus();
+            }
+          });
+        }
+        $("handback").addEventListener("click", handBack);
+        $("banner-handback").addEventListener("click", handBack);
+        $("type-send").addEventListener("click", function () {
+          var field = $("type-text");
+          if (!field.value) return;
+          typeText(field.value);
+          field.value = "";
+        });
+        $("type-text").addEventListener("keydown", function (event) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            $("type-send").click();
+          }
+        });
+        $("size-input").addEventListener("input", function () {
+          $("size-input").dataset.edited = "1";
+        });
+        $("size-apply").addEventListener("click", function () {
+          var value = $("size-input").value.trim().toLowerCase().replace("×", "x");
+          var size = parseSize(value);
+          if (!size || size.w < 320 || size.h < 240 || size.w > 7680 || size.h > 4320) {
+            setNotice("Enter the size as WIDTHxHEIGHT, for example 1600x900.", true);
+            $("size-input").focus();
+            return;
+          }
+          delete $("size-input").dataset.edited;
+          state.frameDesktop = null;
+          act("size", { size: value }, "Resizing the desktop…");
+        });
+        $("repair").addEventListener("click", function () {
+          act("repair", {}, "Resetting the GUI driver connection…");
+        });
+
+        wireSurface();
+
+        document.addEventListener("visibilitychange", function () {
+          if (visible()) {
+            refresh();
+            pumpFrames();
+            pollJob();
+          } else {
+            clearTimeout(timers.status);
+            timers.status = null;
+            stopFrames();
+          }
+          renderWatch();
+        });
+        window.addEventListener("focus", function () {
+          if (visible()) refresh();
+        });
+
+        function applyContext(context) {
+          var threadId = context && context.thread ? context.thread.threadId : null;
+          if (threadId === state.threadId) return;
+          // A different thread is a different Realm. Control on the old one stays held.
+          stopFrames();
+          dropInput();
+          state.threadId = threadId;
+          state.status = null;
+          state.loadError = null;
+          state.frameAt = null;
+          state.frameError = null;
+          state.frameDesktop = null;
+          state.confirmStop = false;
+          state.watching = true;
+          setup.review = null;
+          setup.error = null;
+          $("frame").hidden = true;
+          $("frame").removeAttribute("src");
+          setNotice("", false);
+          render();
+          refresh();
+        }
+
+        render();
+        if (bridge) {
+          bridge.onContext(applyContext);
+          bridge.ready.then(applyContext);
+        }
+      })();
+    </script>
+  </body>
+</html>

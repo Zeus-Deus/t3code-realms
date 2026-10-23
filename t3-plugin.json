@@ -1,0 +1,95 @@
+{
+  "id": "zeus-deus.t3code-realms",
+  "name": "Realms",
+  "description": "Private Linux test desktops for agents, one per thread. The agent opens, clicks and screenshots apps inside the Realm, never on your screen, pointer or clipboard. Its ordinary work stays in its normal shell. GUI separation, not a hostile-code sandbox.",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "entry": "plugin.mjs",
+  "capabilities": [
+    "storage",
+    "settings",
+    "ui"
+  ],
+  "actions": [
+    {
+      "id": "realm",
+      "title": "Realm: manage this thread's private desktop",
+      "description": "Manage this thread's optional private Linux test desktop (labwc/Wayland). Input: {action: on|off|status|size|stop|repair|shot|watch, size?: \"WIDTHxHEIGHT\"}. Your ordinary shell, files and cwd are unchanged; there is nothing to exit after testing. on starts or reuses the Realm (regular kind only). off stops your use but keeps the desktop and any viewer. stop ends compute and keeps the workspace; save app work first. status works without the GUI driver. repair resets only the GUI-driver connection; take a fresh capture after it and never replay uncertain input. shot returns a screenshot image of the Realm. Never fall back to the physical desktop. If a person has taken control, wait for them to hand it back. Setup requires a person's approval in T3 Code.",
+      "placements": [],
+      "agentCallable": true
+    },
+    {
+      "id": "realm-terminal",
+      "title": "Realm: run a command inside this thread's desktop",
+      "description": "Run a shell command inside this thread's Realm, so GUI apps open on its private display. Input: {command: string, cwd?: absolute path, background?: boolean, timeoutSeconds?: number up to 20} or {jobId, signal?: INT|TERM|KILL|HUP} to poll or signal a job. Use background: true for GUI applications and poll with jobId. The Realm shares this machine's files and network; only the display, input, clipboard and session buses are private. Recognisable attempts to point display or bus variables at the host are refused; this is a guardrail, not containment, so never try to reach the host desktop from a Realm. Use your normal shell for builds and git; use this only for what must run on the private desktop.",
+      "placements": [],
+      "agentCallable": true
+    },
+    {
+      "id": "realm-computer",
+      "title": "Realm: see and control apps in this thread's desktop",
+      "description": "Computer use inside this thread's Realm through the pinned GUI driver. Input: {tool, arguments?}. tool \"list\" shows the available tools, \"describe:<name>\" a tool's arguments. get_desktop_state returns a screenshot image; list_apps and get_window_state (accessibility tree with element tokens) find apps; list_windows only sees X11 windows, so native Wayland apps may be missing there; click, type_text, press_key, hotkey, scroll and drag act on those apps. Verify the app's actual state after input; a successful response alone is not proof. Never acts on the physical desktop.",
+      "placements": [],
+      "agentCallable": true
+    },
+    {
+      "id": "panel",
+      "title": "Realm",
+      "description": "Show this thread's Realm status and open its panel.",
+      "placements": [
+        "thread-menu"
+      ]
+    }
+  ],
+  "views": [
+    {
+      "id": "realm",
+      "title": "Realm",
+      "entry": "views/realm.html",
+      "placement": "side-panel"
+    },
+    {
+      "id": "realms",
+      "title": "Realms",
+      "entry": "views/realms.html",
+      "placement": "page"
+    }
+  ],
+  "threadStatus": [
+    {
+      "id": "realm",
+      "title": "Realm",
+      "viewId": "realm"
+    }
+  ],
+  "settings": [
+    {
+      "key": "size",
+      "label": "Desktop size",
+      "description": "Initial size of new Realms, as WIDTHxHEIGHT.",
+      "type": "string",
+      "default": "1920x1080"
+    },
+    {
+      "key": "idleMinutes",
+      "label": "Idle shutdown (minutes)",
+      "description": "A Realm with no agent or viewer activity stops after this long. Its workspace is kept.",
+      "type": "number",
+      "default": 30
+    },
+    {
+      "key": "renderer",
+      "label": "Renderer",
+      "description": "gles2 (GPU) or pixman (software). Use pixman if Realms fail to start on this machine's GPU.",
+      "type": "string",
+      "default": "gles2"
+    },
+    {
+      "key": "python",
+      "label": "Python",
+      "description": "Python 3.11 or newer on the server, used for the Realm runtime.",
+      "type": "string",
+      "default": "python3"
+    }
+  ]
+}
