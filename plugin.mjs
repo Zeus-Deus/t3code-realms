@@ -1,4 +1,4 @@
-// T3 Code Realms: private Linux test desktops for agents, one per thread.
+// T3 Code Realms: private Linux test desktops for agents, shared by a thread and its verified subagents.
 // GUI separation and owned process lifetime, not a hostile-code sandbox.
 import { createRuntime, RealmError } from "./lib/runtime.mjs";
 import { createRealms, principal } from "./lib/realms.mjs";
@@ -11,11 +11,16 @@ let realms;
 /** Agents read the code in brackets; people read the sentence. */
 const failure = (error) => {
   if (error instanceof RealmError) return new Error(`[${error.code}] ${error.message}`);
-  return error instanceof Error ? error : new Error("Realm operation failed. Nothing fell back to the host desktop.");
+  return new Error(`[failed] ${new RealmError("failed", error instanceof Error ? error.message : "Realm operation failed. Inspect status before retrying; do not replay uncertain input.").message}`);
 };
 const run = (task) => async (input, invocation) => {
   try {
-    return await task(input && typeof input === "object" && !Array.isArray(input) ? input : {}, invocation);
+    const result = await task(input && typeof input === "object" && !Array.isArray(input) ? input : {}, invocation);
+    if (invocation?.caller?.kind === "agent" && result && typeof result === "object")
+      result.message = `${result.message ?? "Realm call completed."} Realm actions only: your ordinary shell, files and other tools are unaffected; continue ordinary work. There is nothing to exit, and off is not needed for ordinary work.`;
+    if (Buffer.byteLength(JSON.stringify(result)) > 120_000)
+      throw new RealmError("result_too_large", "This Realm result exceeded the host limit and was withheld. Inspect status or request smaller output/a smaller capture; do not replay uncertain input.");
+    return result;
   } catch (error) {
     throw failure(error);
   }
@@ -46,6 +51,7 @@ export async function activate(ctx) {
         version: VERSION,
       }),
     connectRfb,
+    sendThread: ctx.threads?.send ? (input) => ctx.threads.send(input) : undefined,
   });
   ctx.signal.addEventListener("abort", () => realms?.dispose(), { once: true });
 
@@ -86,6 +92,7 @@ export async function activate(ctx) {
     "action:realm-terminal",
     run(async (input, invocation) => realms.terminal(principal(invocation, input), input, options(invocation))),
   );
+  ctx.handle("action:realm-files", run(async (input, invocation) => realms.files(principal(invocation, input), input, options(invocation))));
   ctx.handle(
     "action:realm-computer",
     run(async (input, invocation) => realms.computer(principal(invocation, input), input, options(invocation))),
@@ -120,7 +127,7 @@ export async function activate(ctx) {
   view("take", async (who, _input, opts) => ({ data: await realms.takeControl(who, opts) }));
   view("handback", async (who, _input, opts) => ({ data: await realms.handBack(who, opts) }));
   view("input", (who, input, opts) => realms.sendInput(who, input, opts));
-  view("setup-review", (who, _input, opts) => realms.setupReview(who, opts));
+  view("setup-review", (who, input, opts) => realms.setupReview(who, input, opts));
   view("setup-start", (who, input, opts) => realms.setupStart(who, input, opts));
   view("job-status", (who, input, opts) => realms.jobStatus(who, input, opts));
   view("job-cancel", (who, input, opts) => realms.jobCancel(who, input, opts));
@@ -132,14 +139,16 @@ export async function activate(ctx) {
       `view:realms:${name}`,
       run(async (input, invocation) => task(principal(invocation, input), input, options(invocation))),
     );
-  page("list", (who, _input, opts) => realms.list(who, opts));
+  page("list", (who, input, opts) => realms.list(who, input, opts));
   page("stop", async (who, input, opts) => ({ data: await realms.stopById(who, input, opts) }));
   page("delete-review", (who, input, opts) => realms.deleteReview(who, input, opts));
   page("delete", (who, input, opts) => realms.deleteWorkspace(who, input, opts));
-  page("setup-review", (who, _input, opts) => realms.setupReview(who, opts));
+  page("setup-review", (who, input, opts) => realms.setupReview(who, input, opts));
   page("setup-start", (who, input, opts) => realms.setupStart(who, input, opts));
   page("job-status", (who, input, opts) => realms.jobStatus(who, input, opts));
   page("job-cancel", (who, input, opts) => realms.jobCancel(who, input, opts));
+  page("prune-review", (who, input, opts) => realms.pruneReview(who, input, opts));
+  page("prune", (who, input, opts) => realms.pruneRecovery(who, input, opts));
   page("reveal", async (who, input) => {
     if (who.kind !== "user" || typeof input.threadId !== "string") throw new RealmError("invalid_input", "Choose a thread.");
     return { intents: [{ type: "thread.reveal", threadId: input.threadId }] };

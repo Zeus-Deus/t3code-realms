@@ -8,6 +8,13 @@ import uuid
 from .config import effective_home, private_directory, finite_number
 from .lifecycle import OwnershipError, RealmError
 
+MAX_IMAGE_BYTES = 4 * 1024 * 1024
+
+
+def _check_image_budget(size):
+    if size > MAX_IMAGE_BYTES:
+        raise RealmError('Realm capture exceeds the 4 MiB image limit; request a lower scale or JPEG quality')
+
 
 def capture_options(format='png', quality=None, scale=1):
     if format not in ('png', 'jpeg'):
@@ -37,6 +44,7 @@ def asset_path(home, relative):
 
 
 def dimensions(data, format):
+    _check_image_budget(len(data))
     if format == 'png':
         if len(data) < 24 or data[:8] != b'\x89PNG\r\n\x1a\n' or data[12:16] != b'IHDR':
             raise RealmError('capture did not return a PNG')
@@ -83,6 +91,7 @@ def capture(record, env, *, format='png', quality=None, scale=1):
                            check=True, timeout=10)
             output.flush()
             os.fsync(output.fileno())
+        _check_image_budget(path.stat().st_size)
         data = path.read_bytes()
         width, height = dimensions(data, format)
         if width <= 0 or height <= 0:

@@ -9,7 +9,8 @@ from .config import effective_home, validate_owner
 from .errors import error_code
 
 COMMAND_FIELDS = {
-    'doctor': set(), 'list': {'owner'}, 'start': {'owner', 'config'},
+    'doctor': {'config'}, 'setup_plan': {'config'}, 'list': {'owner', 'config'},
+    'vm_prune_review': {'config'}, 'vm_prune': {'config', 'token'}, 'start': {'owner', 'config'},
     'stop': {'id', 'owner'}, 'stop_owner': {'owner'},
     'exec': {'id', 'owner', 'argv', 'cwd'}, 'job': {'id', 'owner', 'job_id'},
     'signal': {'id', 'owner', 'job_id', 'signal'},
@@ -17,7 +18,8 @@ COMMAND_FIELDS = {
     'resize': {'id', 'owner', 'size'}, 'outputs': {'id', 'owner'},
     'windows': {'id', 'owner'}, 'touch': {'id', 'owner'}, 'vnc_endpoint': {'id', 'owner'},
     'driver_status': set(), 'driver_launcher': {'id', 'owner'},
-    'delete_snapshot': {'id', 'owner'}, 'delete': {'id', 'owner', 'token'},
+    'driver_stop': {'id', 'owner', 'incarnation'},
+    'delete_snapshot': {'id', 'owner', 'discard'}, 'delete': {'id', 'owner', 'token', 'discard'},
     'job_start': {'kind', 'owner', 'input'}, 'job_status': {'job_id'},
     'job_cancel': {'job_id'}, 'job_list': {'owner'}, 'job_run': {'job_id'},
 }
@@ -31,11 +33,33 @@ def dispatch(home, command, data):
     home = effective_home(home)
     if not isinstance(data, dict) or set(data) - COMMAND_FIELDS[command]:
         raise ValueError('input must be an object containing only fields for this command')
+    if 'discard' in data and type(data['discard']) is not bool: raise ValueError('discard must be a JSON boolean')
     if 'owner' in data:
         validate_owner(data['owner'])
-    if command == 'doctor':
+    if command in {'doctor', 'setup_plan'}:
+        from .config import Config
+        config = Config.from_object(data.get('config', {}))
+        if command == 'setup_plan':
+            from .setup_plan import plan
+            return plan(home, config)
+        if config.kind == 'omarchy-vm':
+            from .vm_setup import doctor, plan
+            return (doctor if command == 'doctor' else plan)(home, config)
         from .diagnostics import doctor
         return doctor(home)
+    if command in {'vm_prune_review', 'vm_prune'}:
+        from .vm_manager import VmManager
+        from .manager import Manager
+        from .lifecycle import OwnershipError
+        vm = VmManager(home, config=data.get('config', {}))
+        # The exact set is recomputed and compared inside prune's registry lock.
+        snapshot = vm.prune_snapshot(everything=True, recovery_only=True)
+        token = Manager._delete_token(snapshot['delete'])
+        if command == 'vm_prune_review':
+            return {'token': token, 'phrase': 'discard recovery workspaces',
+                    'delete': [{'id': key, 'owner': value['record']['session_id']} for key, value in snapshot['delete'].items()], 'kept': snapshot['kept']}
+        if data.get('token') != token: raise OwnershipError('Recovery prune changed; review again')
+        return {'deleted': vm.prune(snapshot)}
     if command == 'driver_status':
         from .diagnostics import driver_status
         return driver_status(home)
@@ -53,16 +77,26 @@ def dispatch(home, command, data):
         return jobs.run(data['job_id'])
     from .manager import Manager
     manager = Manager(home, config=data.get('config', {}))
+    from .vm_manager import VmManager
+    vm = VmManager(home, config=data.get('config', {}))
     if command == 'list':
-        return manager.list(data.get('owner'))
+        return manager.list(data.get('owner')) + vm.list(data.get('owner'))
     if command == 'start':
         return blocking_start(home, data['owner'], data.get('config', {}))
     if command == 'stop_owner':
-        return manager.stop_owner(data['owner'])
+        manager.stop_owner(data['owner'])
+        return vm.stop_owner(data['owner'])
     realm_id = data['id']
+    if isinstance(realm_id, str) and realm_id.startswith('v-'):
+        manager = vm
     # Every realm operation, including idempotent Stop, resolves the same
     # durable ownership receipt before it can touch compute or workspace data.
     manager.record(realm_id, owner=data.get('owner'))
+    if command == 'driver_stop':
+        if manager is vm:
+            from .errors import coded_error
+            raise coded_error('unsupported', 'VM driver retirement uses its owned terminal job')
+        return manager.stop_driver(realm_id, data['incarnation'])
     if command == 'stop':
         return manager.stop(realm_id)
     if command == 'exec':
@@ -85,12 +119,15 @@ def dispatch(home, command, data):
     if command == 'vnc_endpoint':
         return manager.vnc_endpoint(realm_id, owner=data.get('owner'))
     if command == 'driver_launcher':
+        if manager is vm:
+            from .vm_driver import launcher
+            return launcher(vm, realm_id)
         from .driver import create_driver_launcher
         return {'path': create_driver_launcher(manager, realm_id)}
     if command == 'delete_snapshot':
-        return manager.delete_snapshot(realm_id, session_id=data['owner'])
+        return manager.delete_snapshot(realm_id, session_id=data['owner'], **({'discard': data['discard']} if 'discard' in data and manager is vm else {}))
     if command == 'delete':
-        return manager.delete(realm_id, session_id=data['owner'], token=data.get('token'))
+        return manager.delete(realm_id, session_id=data['owner'], token=data.get('token'), **({'discard': data['discard']} if 'discard' in data and manager is vm else {}))
     raise ValueError('unknown command')
 
 
@@ -138,7 +175,7 @@ def main(argv=None):
             raise ValueError('input exceeds 1 MiB')
         data = json.loads(args.input, parse_constant=reject_constant)
         result = dispatch(args.home, args.command, data)
-        if args.command in {'start', 'job_start', 'driver_launcher', 'stop', 'stop_owner',
+        if args.command in {'start', 'job_start', 'driver_launcher', 'driver_stop', 'stop', 'stop_owner',
                             'delete', 'list', 'job_list', 'job_status', 'job_cancel'}:
             from .runtime_store import prune_runtime
             from .lifecycle import OwnershipError

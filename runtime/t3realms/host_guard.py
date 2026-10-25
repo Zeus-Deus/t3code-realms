@@ -38,22 +38,15 @@ GUARDED_KEYS = (
 )
 
 MESSAGE = (
-    "Blocked: this command re-points {keys} at the host desktop from inside a "
-    "realm. That is how an agent ends up driving the user's real session while "
-    "reporting it is working privately. Request an explicitly approved host target through the caller."
+    "This realm-terminal call was not run: its {keys} assignment could select a "
+    "non-Realm endpoint. Keep the Realm's supplied private environment; remove "
+    "the override for private testing. Ordinary non-GUI work can continue in your "
+    "ordinary provider shell, which is unaffected. This is a pattern check, not "
+    "proof that the command reached the physical desktop."
 )
 
 _ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.DOTALL)
-# shlex keeps shell operators attached to the word before them, so a realistic
-# `export DISPLAY=:0; cmd` yields the token `DISPLAY=:0;` and the value would
-# never match a host display without this.
-_OPERATORS = re.compile(r"[;&|]+$")
-
-
-def _split_operator(token):
-    return _OPERATORS.sub("", token), bool(_OPERATORS.search(token))
-
-
+_WORDS = re.compile(r'''(?:[^\s;&|'"\\]|\\.|'[^']*'|"(?:\\.|[^"\\])*")+|[;&|]+|\n''')
 def _is_host_value(key, value):
     """A guarded key is only an escape when it is pointed somewhere real.
 
@@ -69,6 +62,10 @@ def _is_host_value(key, value):
     """
     if not value:
         return False
+    if value in ('$' + key, '${' + key + '}'):
+        return False
+    if '$' in value or '`' in value:
+        return True
     if key == "XDG_RUNTIME_DIR":
         # A realm's runtime dir is a private subdirectory; the bare user
         # runtime directory is the host's.
@@ -91,27 +88,48 @@ def host_escape(command):
     if not isinstance(command, str) or not command.strip():
         return None
     try:
-        tokens = shlex.split(command, comments=True)
+        shlex.split(command, comments=True)
     except ValueError:
         return None
     found = []
-    for index, token in enumerate(tokens):
-        bare, _ = _split_operator(token)
-        match = _ASSIGNMENT.match(bare)
+    position = 'prefix'
+    comment = operand = False
+    for raw in _WORDS.findall(command):
+        if raw == '\n':
+            position = 'prefix'
+            comment = operand = False
+            continue
+        if comment:
+            continue
+        if raw.startswith('#'):
+            comment = True
+            continue
+        # Keep quoting until after recognizing operators: a printed ";" or
+        # escaped \; is argument data, not a new command's assignment prefix.
+        if all(char in ';&|' for char in raw):
+            position = 'prefix'
+            operand = False
+            continue
+        if operand:
+            operand = False
+            continue
+        token = shlex.split(raw, comments=False)[0]
+        match = _ASSIGNMENT.match(token)
         if match is None:
+            name = token.rsplit('/', 1)[-1]
+            if position in ('prefix', 'environment') and name == 'env':
+                position = 'environment'
+            elif position == 'prefix' and name in ('export', 'declare', 'typeset', 'setenv'):
+                position = 'declaration'
+            elif position == 'environment' and token.startswith('-'):
+                operand = token in ('-u', '--unset', '-C', '--chdir', '--argv0')
+            elif position == 'declaration':
+                continue
+            else:
+                position = 'arguments'
             continue
         key, value = match.groups()
-        if key not in GUARDED_KEYS or not _is_host_value(key, value):
-            continue
-        previous, ended = _split_operator(tokens[index - 1]) if index else ("", True)
-        # A bare `VAR=x` at the start of a command, an `export VAR=x`, and an
-        # `env VAR=x cmd` prefix all place the value in a child's environment.
-        # An assignment appearing as a normal argument does not. A preceding
-        # operator (`cmd; VAR=x ...`) starts a new command, so the assignment
-        # there is a prefix too.
-        if index == 0 or ended \
-                or previous in ("env", "export", "declare", "typeset", "setenv") \
-                or _ASSIGNMENT.match(previous) or previous in (";", "&&", "||", "|", "&"):
+        if position != 'arguments' and key in GUARDED_KEYS and _is_host_value(key, value):
             found.append(key)
     if not found:
         return None

@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Realm</title>
     <style>
@@ -23,6 +24,8 @@
         --radius: var(--border-radius-md, 8px);
         --font: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
         --mono: var(--font-mono, ui-monospace, monospace);
+        --danger-fill: var(--color-border-danger, #dc2626);
+        --hover: color-mix(in oklab, var(--fg) 6%, transparent);
         color-scheme: light dark;
       }
       html[data-t3-theme="dark"] {
@@ -36,6 +39,7 @@
         --danger: var(--color-text-danger, #f87171);
         --success: var(--color-text-success, #4ade80);
         --warning: var(--color-text-warning, #fbbf24);
+        --hover: color-mix(in oklab, var(--fg) 8%, transparent);
       }
       * {
         box-sizing: border-box;
@@ -51,140 +55,147 @@
         color: var(--fg);
         font: 13px/1.45 var(--font);
       }
-      main {
+      svg {
+        display: block;
+        flex: none;
+      }
+      main,
+      #content {
         display: flex;
         flex-direction: column;
         gap: 12px;
-        padding: 10px 12px 24px;
       }
-      header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        min-width: 0;
-      }
-      h1 {
-        margin: 0;
-        font-size: 14px;
-        font-weight: 600;
-      }
-      h2 {
-        margin: 0;
-        font-size: 12px;
-        font-weight: 600;
-      }
-      .spacer {
-        flex: 1;
+      main {
+        padding: 12px 14px 24px;
       }
       p {
         margin: 0;
       }
-      .hint,
-      .lede {
-        color: var(--muted);
-        font-size: 12px;
+      h2 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
       }
-      section {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        padding-top: 10px;
-        border-top: 1px solid var(--border);
+      :focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 1px;
       }
-      .row {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 8px;
-        flex-wrap: wrap;
+      .spacer {
+        flex: 1;
       }
-      .value {
-        font-size: 12px;
-        text-align: right;
-        overflow-wrap: anywhere;
-      }
-      .actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-      button,
-      input,
-      summary {
-        font: inherit;
-        font-size: 12px;
-      }
+
+      /* Buttons */
       button {
         display: inline-flex;
         align-items: center;
-        min-height: 28px;
+        justify-content: center;
+        gap: 6px;
+        flex: none;
+        height: 28px;
         padding: 0 10px;
         border: 1px solid var(--input);
-        border-radius: calc(var(--radius) - 2px);
+        border-radius: calc(var(--radius) - 1px);
         background: var(--bg);
         color: var(--fg);
-        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 500;
         white-space: nowrap;
+        cursor: pointer;
       }
       button:hover:not(:disabled) {
-        background: var(--muted-bg);
+        background: var(--hover);
       }
       button:disabled {
-        opacity: 0.5;
         cursor: default;
+        opacity: 0.55;
       }
       button.primary {
+        border-color: transparent;
         background: var(--fg);
-        border-color: var(--fg);
         color: var(--bg);
       }
       button.primary:hover:not(:disabled) {
-        background: var(--fg);
-        opacity: 0.9;
+        background: color-mix(in oklab, var(--fg) 85%, var(--bg));
+      }
+      button.danger {
+        border-color: transparent;
+        background: var(--danger-fill);
+        color: #fff;
+      }
+      button.danger:hover:not(:disabled) {
+        background: color-mix(in oklab, var(--danger-fill) 88%, #000);
       }
       button.ghost {
         border-color: transparent;
         background: transparent;
         color: var(--muted);
       }
-      button.ghost:hover:not(:disabled) {
+      .icon-button {
+        width: 28px;
+        padding: 0;
+        border-color: transparent;
+        background: transparent;
+        color: var(--muted);
+      }
+      .icon-button[aria-expanded="true"] {
+        background: var(--hover);
         color: var(--fg);
       }
-      button.danger {
-        color: var(--danger);
+
+      /* Header */
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
       }
-      input[type="text"] {
-        min-width: 0;
-        height: 28px;
-        padding: 0 8px;
-        border: 1px solid var(--input);
-        border-radius: calc(var(--radius) - 2px);
-        background: var(--bg);
-        color: var(--fg);
+      .head h1 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
       }
-      :focus-visible {
-        outline: 2px solid var(--ring);
-        outline-offset: 1px;
-      }
-      .badge {
+      .pill {
         display: inline-flex;
         align-items: center;
-        height: 18px;
-        padding: 0 6px;
-        border-radius: 4px;
-        background: var(--muted-bg);
+        gap: 5px;
+        height: 20px;
+        padding: 0 8px;
+        border-radius: 999px;
         font-size: 11px;
         font-weight: 500;
         white-space: nowrap;
-      }
-      .badge.live {
         color: var(--success);
+        background: color-mix(in oklab, var(--success) 14%, transparent);
       }
-      .badge.warn {
+      .pill::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+      .pill.warn {
         color: var(--warning);
+        background: color-mix(in oklab, var(--warning) 14%, transparent);
       }
-      .badge.bad {
+      .pill.bad {
         color: var(--danger);
+        background: color-mix(in oklab, var(--danger) 14%, transparent);
+      }
+      .pill.off {
+        color: var(--muted);
+        background: var(--hover);
+      }
+      .tag {
+        height: 20px;
+        padding: 0 7px;
+        border: 0;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--muted);
+        background: var(--hover);
       }
       .notice {
         font-size: 12px;
@@ -194,78 +205,379 @@
       .notice:empty {
         display: none;
       }
-      .notice.error,
       .error {
         color: var(--danger);
       }
-      .box {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        padding: 8px 10px;
-        border-radius: calc(var(--radius) - 2px);
-        background: var(--surface);
-        font-size: 12px;
-      }
-      .banner {
+
+      /* Shown under the screen while the person has control, so the screen itself never moves. */
+      .control-bar {
         display: flex;
         align-items: center;
         gap: 8px;
-        flex-wrap: wrap;
-        padding: 8px 10px;
-        border: 1px solid var(--warning);
-        border-radius: calc(var(--radius) - 2px);
+        min-height: 40px;
+        padding: 6px 6px 6px 10px;
+        border-radius: 10px;
+        font-size: 12px;
         font-weight: 500;
+        color: var(--warning);
+        background: color-mix(in oklab, var(--warning) 12%, transparent);
       }
-      .banner span {
+      .control-bar .text {
         flex: 1;
-        min-width: 12em;
+        min-width: 0;
+      }
+      .control-bar small {
+        display: block;
+        font-weight: 400;
+        color: var(--muted);
+      }
+      .control-bar button {
+        border-color: color-mix(in oklab, var(--warning) 45%, transparent);
+        background: transparent;
+        color: var(--warning);
+      }
+
+      /* Screen */
+      .screen {
+        position: relative;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        background: #0b0b0d;
+      }
+      .screen.controlled {
+        border-color: transparent;
+        box-shadow: 0 0 0 2px var(--warning);
       }
       .surface {
         position: relative;
-        width: 100%;
-        min-height: 60px;
-        border: 1px solid var(--border);
-        border-radius: calc(var(--radius) - 2px);
-        background: var(--surface);
-        overflow: hidden;
+        aspect-ratio: 16 / 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        outline: none;
+        touch-action: none;
       }
       .surface img {
         display: block;
         width: 100%;
-        height: auto;
+        height: 100%;
+        object-fit: contain;
         user-select: none;
         -webkit-user-drag: none;
       }
-      .surface.controlled {
-        border-color: var(--warning);
-        touch-action: none;
+      .screen.controlled .surface {
         cursor: crosshair;
       }
       .surface-empty {
         position: absolute;
         inset: 0;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: 12px;
-        background: var(--surface);
+        gap: 10px;
+        padding: 16px;
         text-align: center;
-        color: var(--muted);
         font-size: 12px;
+        color: var(--muted);
+        background: var(--surface);
+      }
+      .surface-empty p {
+        max-width: 34ch;
+        overflow-wrap: anywhere;
+      }
+      .surface-empty strong {
+        display: block;
+        color: var(--fg);
+        font-weight: 500;
+      }
+      .overlay {
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        pointer-events: none;
+      }
+      .overlay > * {
+        pointer-events: auto;
+      }
+      .chip {
+        min-width: 0;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: 7px;
+        font-size: 11px;
+        line-height: 24px;
+        color: #e8e8ea;
+        background: rgba(10, 10, 12, 0.66);
+        backdrop-filter: blur(6px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .overlay .glass {
+        border-color: rgba(255, 255, 255, 0.16);
+        background: rgba(10, 10, 12, 0.66);
+        color: #fff;
+        backdrop-filter: blur(6px);
+      }
+      .overlay .glass:hover:not(:disabled) {
+        background: rgba(10, 10, 12, 0.82);
+      }
+      .overlay .glass.icon {
+        width: 28px;
+        padding: 0;
+      }
+
+      /* Rows, in the style of the thread details card */
+      .rows {
+        display: flex;
+        flex-direction: column;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+        width: auto;
+        height: 32px;
+        margin: 0 -6px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: color-mix(in oklab, var(--fg) 85%, transparent);
+        font-size: 13px;
+        font-weight: 500;
+        text-align: left;
+      }
+      .row:hover:not(:disabled) {
+        background: var(--hover);
+      }
+      .row > svg {
+        width: 16px;
+        height: 16px;
+        color: var(--muted);
+      }
+      .row .grow {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row .meta {
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row.destructive,
+      .row.destructive > svg {
+        color: var(--danger);
+      }
+      .row[aria-expanded="true"] {
+        background: var(--hover);
+      }
+      .switch {
+        position: relative;
+        flex: none;
+        width: 30px;
+        height: 18px;
+        border-radius: 999px;
+        background: var(--input);
+        transition: background 120ms ease;
+      }
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: var(--bg);
+        transition: transform 120ms ease;
+      }
+      html[data-t3-theme="dark"] [aria-checked="false"] > .switch::after {
+        background: var(--muted);
+      }
+      [aria-checked="true"] > .switch {
+        background: var(--ring);
+      }
+      [aria-checked="true"] > .switch::after {
+        transform: translateX(12px);
+      }
+      .sep {
+        height: 1px;
+        margin: 4px 0;
+        background: var(--border);
+      }
+      .field {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .field input {
+        flex: 1;
+        min-width: 0;
+      }
+      .field button {
+        height: 30px;
+      }
+      .chevron {
+        width: 14px;
+        height: 14px;
+      }
+      .caveat {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      input[type="text"] {
+        height: 30px;
+        padding: 0 9px;
+        border: 1px solid var(--input);
+        border-radius: calc(var(--radius) - 1px);
+        background: var(--bg);
+        color: var(--fg);
+        font: inherit;
+        font-size: 12px;
+      }
+      .typer {
+        margin-bottom: 4px;
+      }
+
+      /* Menus */
+      .menu-wrap {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+      }
+      .menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        min-width: 180px;
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+      }
+      .menu.wide {
+        left: -6px;
+        right: -6px;
+      }
+      .menu.up {
+        top: auto;
+        bottom: calc(100% + 4px);
+      }
+      .menu button {
+        justify-content: flex-start;
+        height: 30px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        font-weight: 400;
+      }
+      .menu button.option {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        height: auto;
+        padding: 6px 8px;
+        white-space: normal;
+        text-align: left;
+      }
+      .menu button.option strong {
+        font-weight: 500;
+      }
+      .menu button.option small {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .menu button[aria-checked="true"] {
+        background: var(--hover);
+      }
+
+      /* Boxes */
+      .confirm,
+      .problems,
+      .box {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin: 4px 0;
+        padding: 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .confirm {
+        border: 1px solid color-mix(in oklab, var(--danger) 35%, transparent);
+        background: color-mix(in oklab, var(--danger) 7%, transparent);
+      }
+      .problems {
+        gap: 8px;
+        border: 1px solid color-mix(in oklab, var(--danger) 30%, transparent);
+        background: color-mix(in oklab, var(--danger) 6%, transparent);
+      }
+      .box {
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+      .box .actions,
+      #setup .actions {
+        justify-content: flex-start;
+      }
+      label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      /* Setup (rendered by script) */
+      #setup-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+      }
+      #setup {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        font-size: 12px;
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
       }
       .mono {
         font-family: var(--mono);
         font-size: 11px;
         overflow-wrap: anywhere;
-        user-select: text;
       }
       dl {
         display: grid;
         grid-template-columns: max-content minmax(0, 1fr);
-        gap: 4px 10px;
+        gap: 4px 12px;
         margin: 0;
-        font-size: 12px;
       }
       dt {
         color: var(--muted);
@@ -278,27 +590,54 @@
         margin: 0;
         padding-left: 16px;
       }
-      details {
-        border-top: 1px solid var(--border);
-        padding-top: 8px;
+      code {
+        font-family: var(--mono);
+        font-size: 11px;
+        overflow-wrap: anywhere;
       }
-      summary {
-        cursor: pointer;
-        color: var(--muted);
+
+      /* Narrow panels: keep the screen controls on one line. */
+      @media (max-width: 340px) {
+        main {
+          padding: 10px 10px 20px;
+        }
+        #frame-meta {
+          display: none;
+        }
+        #take .label {
+          display: none;
+        }
+        #take {
+          width: 28px;
+          padding: 0;
+        }
+        dl {
+          grid-template-columns: minmax(0, 1fr);
+        }
       }
-      details[open] summary {
-        margin-bottom: 8px;
-      }
-      .field {
+      /*
+       * A maximized panel puts the screen beside the controls, and caps the screen to the panel's
+       * height so nothing drops below the fold. --ar is the desktop's aspect ratio, set by script.
+       */
+      .stage,
+      .side {
         display: flex;
-        gap: 6px;
-        align-items: center;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
       }
-      .field input {
-        flex: 1;
-      }
-      label {
-        font-size: 12px;
+      @media (min-width: 800px) {
+        /* The page is as wide as the screen that fits the panel's height, plus the controls. */
+        main {
+          max-width: calc((100vh - 150px) * var(--ar, 1.6) + 348px);
+          margin: 0 auto;
+        }
+        #content {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 300px;
+          align-items: start;
+          gap: 20px;
+        }
       }
       @media (prefers-reduced-motion: reduce) {
         * {
@@ -310,122 +649,123 @@
   </head>
   <body>
     <main>
-      <header>
+      <header class="head" id="head">
         <h1>Realm</h1>
-        <span class="badge" id="state-badge" hidden></span>
+        <span class="pill" id="state-badge" hidden></span>
+        <button type="button" class="tag" id="shared-chip" aria-expanded="false" hidden>Shared</button>
         <span class="spacer"></span>
-        <button type="button" class="ghost" id="refresh">Refresh</button>
-        <button type="button" class="ghost" id="open-realms">All Realms</button>
+        <div class="menu-wrap">
+          <button type="button" class="icon-button" id="more-button" aria-label="More Realm actions" aria-haspopup="menu" aria-expanded="false" aria-controls="more-menu">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+          </button>
+          <div class="menu" id="more-menu" role="menu" aria-label="More Realm actions" hidden>
+            <button type="button" role="menuitem" id="menu-size">Desktop size…</button>
+            <button type="button" role="menuitem" id="repair">Reset GUI driver</button>
+            <button type="button" role="menuitem" id="refresh">Refresh</button>
+          </div>
+        </div>
       </header>
-      <p class="lede">
-        This thread's private Linux desktop. Its display, input and clipboard are separate from
-        yours. It shares this machine's files and network, so it is not a sandbox, and nothing
-        ever falls back to your own desktop.
-      </p>
+
       <div class="notice" id="notice" role="status" aria-live="polite"></div>
 
-      <div class="banner" id="control-banner" role="status" hidden>
-        <span>You have control — the agent is paused.</span>
-        <button type="button" id="banner-handback">Hand back</button>
-      </div>
-
       <div id="content" hidden>
-        <section aria-labelledby="agent-heading">
-          <div class="row">
-            <h2 id="agent-heading">Agent use</h2>
-            <span class="value" id="mode-text"></span>
-          </div>
-          <p class="hint" id="mode-hint"></p>
-          <div class="actions">
-            <button type="button" id="turn-on">Turn on</button>
-            <button type="button" id="turn-off">Turn off</button>
-          </div>
-        </section>
-
-        <section aria-labelledby="desktop-heading">
-          <div class="row">
-            <h2 id="desktop-heading">Desktop</h2>
-            <span class="value" id="desktop-text"></span>
-          </div>
-          <p class="hint" id="desktop-hint"></p>
-          <p class="hint error" id="desktop-error" hidden></p>
-          <div class="actions">
-            <button type="button" id="start">Start</button>
-            <button type="button" id="stop">Stop…</button>
-          </div>
-          <div class="box" id="stop-confirm" hidden>
-            <p>
-              Stop this desktop? Its apps close and unsaved app work is lost. The workspace is
-              kept. This is not the same as turning agent use off.
-            </p>
-            <div class="actions">
-              <button type="button" class="ghost" id="stop-cancel">Cancel</button>
-              <button type="button" class="danger" id="stop-confirm-button">Stop desktop</button>
+        <div class="stage" id="stage">
+          <div class="screen" id="screen">
+            <div class="surface" id="surface">
+              <img id="frame" alt="Latest capture of this thread's Realm" draggable="false" hidden />
+              <div class="surface-empty" id="surface-empty">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                <p id="empty-text"></p>
+                <button type="button" class="primary" id="screen-action" hidden></button>
+              </div>
+            </div>
+            <div class="overlay" id="overlay" hidden>
+              <span class="chip" id="frame-meta"></span>
+              <span class="spacer"></span>
+              <button type="button" class="glass icon" id="watch" aria-label="Pause watching" title="Pause watching"></button>
+              <button type="button" class="glass" id="take" aria-label="Take control" title="Use the pointer and keyboard in the Realm. The agent waits until you hand back.">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+                <span class="label">Take control</span>
+              </button>
             </div>
           </div>
-        </section>
+          <div class="control-bar" id="control-banner" hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+            <span class="text" role="status"><span id="control-text">You have control · agent paused</span><small>Shift+Esc releases the keyboard</small></span>
+            <button type="button" id="handback">Hand back</button>
+          </div>
+        </div>
 
-        <section aria-labelledby="watch-heading" id="watch-section" hidden>
-          <div class="row">
-            <h2 id="watch-heading">Watch</h2>
-            <span class="hint" id="frame-meta"></span>
-          </div>
-          <div class="surface" id="surface">
-            <img id="frame" alt="" draggable="false" hidden />
-            <div class="surface-empty" id="surface-empty"></div>
-          </div>
-          <div class="actions">
-            <button type="button" id="watch" aria-pressed="true">Pause</button>
-            <button type="button" id="take">Take control</button>
-            <button type="button" id="handback" hidden>Hand back</button>
-          </div>
-          <div class="field" id="typer" hidden>
-            <input
-              type="text"
-              id="type-text"
-              autocomplete="off"
-              autocapitalize="off"
-              spellcheck="false"
-              aria-label="Text to type into the Realm"
-              placeholder="Type text into the Realm"
-            />
-            <button type="button" id="type-send">Type</button>
-          </div>
-          <p class="hint" id="watch-hint"></p>
-        </section>
+        <div class="side" id="side">
 
-        <details id="more">
-          <summary>Desktop size and repair</summary>
-          <div class="box">
-            <label for="size-input">Desktop size (width x height)</label>
+          <div class="problems" id="desktop-problems" role="status" hidden></div>
+
+          <div class="box" id="size-box" hidden>
+            <label for="size-input">Desktop size, as width × height</label>
             <div class="field">
-              <input
-                type="text"
-                id="size-input"
-                inputmode="numeric"
-                autocomplete="off"
-                placeholder="1600x900"
-                aria-describedby="size-hint"
-              />
-              <button type="button" id="size-apply">Apply</button>
-            </div>
-            <p class="hint" id="size-hint">Applies to the running desktop.</p>
-          </div>
-          <div class="box" style="margin-top: 8px">
-            <p class="hint">
-              If the agent's clicks stop reaching apps, reset the GUI driver connection. Nothing
-              is replayed; the agent takes a fresh capture next.
-            </p>
-            <div class="actions">
-              <button type="button" id="repair">Reset GUI driver connection</button>
+              <input type="text" id="size-input" inputmode="numeric" autocomplete="off" placeholder="1600x900" />
+              <button type="button" class="ghost" id="size-cancel">Cancel</button>
+              <button type="button" class="primary" id="size-apply">Apply</button>
             </div>
           </div>
-        </details>
 
-        <section aria-labelledby="setup-heading" id="setup-section" hidden>
-          <h2 id="setup-heading">Setup</h2>
-          <div id="setup"></div>
-        </section>
+          <div class="rows">
+            <div class="field typer" id="typer" hidden>
+              <input type="text" id="type-text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Text to type into the Realm" placeholder="Type text into the Realm…" />
+              <button type="button" id="type-send">Type</button>
+            </div>
+            <button type="button" class="row" id="agent-row" role="switch" aria-checked="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></svg>
+              <span class="grow">Agent can use it</span>
+              <span class="meta" id="agent-meta"></span>
+              <span class="switch" aria-hidden="true"></span>
+            </button>
+            <div class="menu-wrap">
+              <button type="button" class="row" id="kind-button" aria-haspopup="menu" aria-expanded="false" aria-controls="kind-menu">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                <span class="grow" id="kind-label">Desktop</span>
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="menu wide" id="kind-menu" role="menu" aria-label="Kind of Realm" hidden>
+                <button type="button" class="option" role="menuitemradio" aria-checked="false" data-kind="realm">
+                  <strong>Desktop</strong><small>Lightweight private desktop on this machine</small>
+                </button>
+                <button type="button" class="option" role="menuitemradio" aria-checked="false" data-kind="omarchy-vm">
+                  <strong>Omarchy VM</strong><small>Own disk, kernel and Hyprland, in QEMU/KVM</small>
+                </button>
+              </div>
+            </div>
+            <div class="confirm" id="switch-confirm" hidden>
+              <p id="switch-text"></p>
+              <div class="actions">
+                <button type="button" id="switch-cancel">Cancel</button>
+                <button type="button" class="danger" id="switch-confirm-button">Switch</button>
+              </div>
+            </div>
+            <div class="sep"></div>
+            <button type="button" class="row" id="open-realms">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              <span class="grow">All Realms</span>
+            </button>
+            <button type="button" class="row destructive" id="stop" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>
+              <span class="grow" id="stop-label">Stop desktop…</span>
+            </button>
+            <div class="confirm" id="stop-confirm" hidden>
+              <p id="stop-text"></p>
+              <div class="actions">
+                <button type="button" id="stop-cancel">Cancel</button>
+                <button type="button" class="danger" id="stop-confirm-button">Stop desktop</button>
+              </div>
+            </div>
+          </div>
+
+          <p class="caveat" id="caveat"></p>
+          <section aria-labelledby="setup-heading" id="setup-section" hidden>
+            <h2 id="setup-heading">Setup</h2>
+            <div id="setup"></div>
+          </section>
+        </div>
       </div>
     </main>
     <script>
@@ -452,6 +792,10 @@
           frameError: null,
           frameDesktop: null,
           confirmStop: false,
+          sizeOpen: false,
+          // The kind chosen before turning on; once on, the thread's preference decides.
+          kindDraft: null,
+          confirmSwitch: null,
           statusInFlight: false,
           statusAgain: false,
         };
@@ -488,9 +832,11 @@
             : { code: (error && error.reason) || "failed", text: message };
         }
 
+        var SHARED_TEXT = "Shared with the thread that delegated this one. Changes here apply to both.";
         function setNotice(text, isError) {
           $("notice").textContent = text || "";
           $("notice").className = isError ? "notice error" : "notice";
+          $("shared-chip").setAttribute("aria-expanded", String(text === SHARED_TEXT));
         }
 
         function call(name, payload) {
@@ -510,6 +856,30 @@
         function realm() {
           return state.status && state.status.realm;
         }
+        var KIND_NAMES = { realm: "Desktop", "omarchy-vm": "Omarchy VM" };
+        function chosenKind() {
+          var status = state.status;
+          if (!status) return state.kindDraft || "realm";
+          return status.mode === "realm" ? status.kind || "realm" : state.kindDraft || status.kind || "realm";
+        }
+        function reviewKind(review) {
+          return review ? review.kind || "realm" : null;
+        }
+        function isVm() {
+          return chosenKind() === "omarchy-vm";
+        }
+        /** Whether setup is done for the chosen kind; the status only covers the thread's saved kind. */
+        function setupReady() {
+          var status = state.status;
+          if (!status) return false;
+          if ((status.kind || "realm") === chosenKind()) return status.setup.ready;
+          return Boolean(setup.review && reviewKind(setup.review) === chosenKind() && setup.review.ready);
+        }
+        function gib(bytes) {
+          if (typeof bytes !== "number") return null;
+          var value = bytes / 1073741824;
+          return (value >= 10 ? Math.round(value) : Math.round(value * 10) / 10) + " GiB";
+        }
         function isLive() {
           var r = realm();
           return Boolean(r && r.state === "live");
@@ -518,21 +888,73 @@
           var r = realm();
           return Boolean(isLive() && r.controlledBy === "user");
         }
+        function pending(attempt) {
+          return Boolean(attempt && (attempt.state === "queued" || attempt.state === "running"));
+        }
+        function failed(attempt) {
+          return Boolean(attempt && !pending(attempt) && attempt.state !== "succeeded");
+        }
         function isTransitional() {
           var r = realm();
+          var status = state.status;
           return Boolean(
-            (state.status && state.status.starting) ||
+            (status && (status.starting || pending(status.startAttempt) || pending(status.driverPreparation))) ||
               (r && (r.state === "starting" || r.state === "stopping")),
           );
         }
 
+        /**
+         * Problems the person can act on. The plugin's `nextStep` text is written for agents, so the
+         * panel says what happened and offers the control that recovers.
+         */
+        function renderProblems() {
+          var status = state.status;
+          var r = realm();
+          var nodes = [];
+          var busy = Boolean(state.busy);
+          function problem(text, button) {
+            nodes.push(el("p", { class: "error", text: text }));
+            if (button) nodes.push(el("div", { class: "actions" }, [button]));
+          }
+          if (status.runtimeFailure)
+            problem(
+              "Couldn't read this Realm's state: " + status.runtimeFailure.error + " Stopping it retries cleanup; the workspace is kept.",
+            );
+          if (status.driverCleanup)
+            problem(
+              "Agent use is off, but the GUI driver didn't shut down cleanly: " + status.driverCleanup.error + " Stop the desktop to clean it up.",
+            );
+          if (failed(status.startAttempt) && !isLive())
+            problem(
+              "The last start failed: " + (status.startAttempt.error || status.startAttempt.code || "unknown error") + ". Start it again when ready.",
+            );
+          if (failed(status.driverPreparation) && isLive())
+            problem(
+              "The GUI driver couldn't be prepared: " + (status.driverPreparation.error || status.driverPreparation.code || "unknown error") + ".",
+              el("button", {
+                type: "button",
+                disabled: busy,
+                text: "Prepare again",
+                onclick: function () {
+                  act("repair", {}, "Preparing the GUI driver again…");
+                },
+              }),
+            );
+          if (r && r.cleanupRequired && r.state !== "recovery-required")
+            problem("Cleanup of this desktop isn't confirmed yet. Stop it again to retry; the workspace is kept.");
+          if (r && r.error && r.state !== "recovery-required") problem(r.error);
+          var box = $("desktop-problems");
+          box.hidden = nodes.length === 0;
+          box.replaceChildren.apply(box, nodes);
+        }
+
         // Python runtime timestamps are epoch seconds.
-        function clock(seconds) {
-          return new Date(seconds * 1000).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-          });
+        function lastActive(seconds) {
+          var when = new Date(seconds * 1000);
+          var time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          return when.toDateString() === new Date().toDateString()
+            ? time
+            : when.toLocaleDateString([], { month: "short", day: "numeric" }) + ", " + time;
         }
         function minutes(seconds) {
           if (!seconds) return null;
@@ -557,7 +979,7 @@
           // Only the placeholder goes; action, error, and handback notices outlive polls.
           if ($("notice").textContent === LOADING_NOTICE) setNotice("", false);
           // Reopening the panel re-attaches to a setup job that is still running.
-          if (!next.setup.ready && !setup.review && !setup.busy) reviewSetup();
+          if (!setupReady() && !(setup.review && reviewKind(setup.review) === chosenKind()) && !setup.busy) reviewSetup();
           if (wasControlled && !isControlled()) dropInput();
           render();
           pumpFrames();
@@ -859,11 +1281,21 @@
           input.pressed = {};
         }
 
+        // Characters typed with Shift on a US layout. VM guests (QEMU's VNC server) drop a shifted
+        // keysym unless Shift is down, while the regular desktop accepts either.
+        var SHIFTED_SYMBOLS = '~!@#$%^&*()_+{}|:"<>?';
+        function needsShift(character) {
+          return /^[A-Z]$/.test(character) || SHIFTED_SYMBOLS.indexOf(character) >= 0;
+        }
+
         function typeText(text) {
           Array.from(text).forEach(function (character) {
             var sym = character === "\n" ? 0xff0d : charKeysym(character);
+            var shift = needsShift(character);
+            if (shift) enqueue({ type: "key", keysym: 0xffe1, down: true }, false);
             enqueue({ type: "key", keysym: sym, down: true }, false);
             enqueue({ type: "key", keysym: sym, down: false }, false);
+            if (shift) enqueue({ type: "key", keysym: 0xffe1, down: false }, false);
           });
           clearTimeout(timers.move);
           timers.move = null;
@@ -957,9 +1389,11 @@
           setup.busy = true;
           setup.error = null;
           renderSetup();
-          return call("setup-review")
+          var kind = chosenKind();
+          return call("setup-review", { kind: kind })
             .then(
               function (result) {
+                if (kind !== chosenKind()) return;
                 setup.review = result.data;
                 if (result.data.job) setup.job = result.data.job;
                 pollJob();
@@ -978,7 +1412,7 @@
           setup.busy = true;
           setup.error = null;
           renderSetup();
-          call("setup-start", { reviewId: setup.review.reviewId })
+          call("setup-start", { kind: reviewKind(setup.review), reviewId: setup.review.reviewId })
             .then(
               function (result) {
                 if (result.data && result.data.jobId) {
@@ -1013,7 +1447,12 @@
                 renderSetup();
                 if (jobActive(setup.job)) pollJob();
                 else {
-                  if (setup.job.state === "succeeded") setNotice("Setup complete. You can turn the Realm on.", false);
+                  if (setup.job.state === "succeeded")
+                    setNotice(
+                      (reviewKind(setup.review) === "omarchy-vm" ? "The Omarchy VM is prepared." : "Setup complete.") +
+                        " You can turn the Realm on.",
+                      false,
+                    );
                   reviewSetup().then(refresh);
                 }
               },
@@ -1047,34 +1486,116 @@
         }
 
         // A missing driver is what setup installs; everything else needs the system's package manager.
+        var INSTALLED_BY_SETUP = ["verified cua-driver", "Omarchy base image"];
+        /** What setup cannot do itself. Plans that list `blockers` say so; older ones only list `missing`. */
         function systemBlockers(review) {
-          return (review.missing || []).filter(function (name) {
-            return name !== "verified cua-driver";
+          var names = Array.isArray(review.blockers) ? review.blockers : review.missing || [];
+          return names.filter(function (name, index, all) {
+            return all.indexOf(name) === index && INSTALLED_BY_SETUP.indexOf(name) < 0;
           });
+        }
+        function progressText(progress) {
+          if (typeof progress === "string") return progress;
+          return progress && typeof progress.message === "string" ? progress.message : null;
+        }
+
+        var BLOCKER_NAMES = { systemd_user: "systemd user session" };
+
+        function setupFacts(review) {
+          var driver = review.driver || {};
+          var facts = [
+            el("dt", { text: "Machine" }),
+            el("dd", { text: [review.platform, review.arch].filter(Boolean).join(" · ") || "Unknown" }),
+            el("dt", { text: "systemd user" }),
+            el("dd", { text: review.systemdUser === true ? "Available" : review.systemdUser === false ? "Not available" : "Unknown" }),
+            el("dt", { text: "GUI driver" }),
+            el("dd", { text: "cua-driver " + driver.version + " (pinned) · " + (driver.installed ? "installed and verified" : "not installed") }),
+          ];
+          if (reviewKind(review) !== "omarchy-vm") {
+            return facts.concat([
+              el("dt", { text: "SHA-256" }),
+              el("dd", { class: "mono", text: driver.archiveSha256 }),
+              el("dt", { text: "Download" }),
+              el("dd", { class: "mono", text: driver.url }),
+              el("dt", { text: "Installs to" }),
+              el("dd", { class: "mono", text: driver.destination }),
+            ]);
+          }
+          var storage = review.storage || {};
+          var base = review.base || {};
+          facts.push(
+            el("dt", { text: "Omarchy base" }),
+            el("dd", { text: "Release " + review.release + " · " + (base.present ? "installed" : "not installed") }),
+            el("dt", { text: "Each VM" }),
+            el("dd", {
+              text:
+                Math.round((storage.memoryMiB || 0) / 102.4) / 10 + " GiB RAM · " +
+                storage.cpus + (storage.cpus === 1 ? " CPU" : " CPUs") + " · " +
+                storage.virtualDisk + " disk · " +
+                (storage.network ? "network on" : "restricted network"),
+            }),
+            el("dt", { text: "Free space needed" }),
+            el("dd", { text: gib(storage.requiredFreeBytes) || "Unknown" }),
+          );
+          (review.downloads || []).forEach(function (download) {
+            facts.push(
+              el("dt", { text: "Download" }),
+              el("dd", {}, [
+                el("span", { class: "mono", text: download.url }),
+                el("br"),
+                el("span", {
+                  class: "hint",
+                  text:
+                    "About " + (gib(download.estimatedBytes) || "unknown size") +
+                    (download.signer ? " · GPG-verified, signer " + download.signer : download.archiveSha256 ? " · SHA-256 " + download.archiveSha256 : "") +
+                    " · to " + download.destination,
+                }),
+              ]),
+            );
+          });
+          return facts;
+        }
+
+        function setupJobLine(job, vm) {
+          var text = progressText(job.progress);
+          var progress = text ? " (" + text + ")" : "";
+          var what = vm ? "Omarchy VM preparation" : "Setup";
+          if (job.state === "running" && job.progress && job.progress.stage === "packages")
+            return "Installing system packages" + progress + "… Approve the password prompt on the machine running T3 Code. Cancelling waits for the package manager to finish.";
+          return job.state === "queued"
+            ? what + " queued…"
+            : job.state === "running"
+              ? (vm ? "Preparing the Omarchy VM" : "Setting up") + progress + "…"
+              : job.state === "succeeded"
+                ? vm ? "Omarchy VM prepared." : "Setup finished."
+                : job.state === "cancelled"
+                  ? what + " cancelled."
+                  : what + " failed: " + (job.error || job.code || "unknown error") + ". Review and try again.";
         }
 
         function renderSetup() {
           var container = $("setup");
-          var status = state.status;
-          var review = setup.review;
+          var vm = isVm();
+          var review = setup.review && reviewKind(setup.review) === chosenKind() ? setup.review : null;
           var job = setup.job;
           var active = jobActive(job);
-          $("setup-section").hidden = !(active || (status && !status.setup.ready) || (review && !review.ready));
+          var ready = setupReady();
+          var continuation = state.status && state.status.continuation && state.status.continuation.length > 0;
+          $("setup-section").hidden = !(active || continuation || (state.status && !ready) || (review && !review.ready));
           var nodes = [];
-          var summary = review ? review.message : status && status.setup.message;
           nodes.push(
             el("p", {
               class: "hint",
               text:
-                (review && review.ready) || (status && status.setup.ready && !active)
+                (review && review.ready) || (ready && !active)
                   ? "Setup is complete on this machine."
-                  : "Realms need a one-time setup on the machine running T3 Code. A person reviews and approves it here." +
-                    (summary ? " " + summary + "." : ""),
+                  : vm
+                    ? "A signed Omarchy release is downloaded and installed into a base disk that every thread's VM builds on. It takes a while. Review it, then approve."
+                    : "Review what it installs on the machine running T3 Code, then approve.",
             }),
           );
           if (review) {
             var blockers = systemBlockers(review);
-            var driver = review.driver || {};
             if (blockers.length) {
               nodes.push(
                 el("div", { class: "box", role: "note" }, [
@@ -1083,56 +1604,51 @@
                     "ul",
                     { class: "plain mono" },
                     blockers.map(function (name) {
-                      return el("li", { text: name === "systemd_user" ? "systemd user session" : name });
+                      return el("li", { text: BLOCKER_NAMES[name] || name });
                     }),
                   ),
                   el("span", {
                     class: "hint",
-                    text: "Install these with your system package manager, then review again. Realms never runs sudo or system installers.",
+                    text: "Fix these on the machine running T3 Code, then review again. Realms never changes SSH keys, device permissions or your system's package keyring.",
                   }),
                 ]),
               );
             }
+            if (review.packages && review.packages.length && review.command) {
+              nodes.push(
+                el("div", { class: "box", role: "note" }, [
+                  el("strong", { text: "Installs system packages" }),
+                  el("span", { class: "mono", text: review.packages.join(" ") }),
+                  el("span", { class: "hint", text: "Approving runs exactly this on the machine running T3 Code, which asks for your password there (Polkit):" }),
+                  el("code", { class: "mono", text: review.command }),
+                ]),
+              );
+            }
+            nodes.push(el("dl", {}, setupFacts(review)));
+            if (vm)
+              nodes.push(
+                el("p", {
+                  class: "hint",
+                  text: "The guest disk is unencrypted and its user has passwordless sudo. Files are copied in and out only when asked; nothing is shared or synced. Keep tokens and keys out of it.",
+                }),
+              );
+          }
+          if (job && (active || (review && !review.ready)))
+            nodes.push(el("p", { class: job.state === "failed" ? "error" : "hint", text: setupJobLine(job, vm) }));
+          (state.status && state.status.continuation ? state.status.continuation : []).forEach(function (item) {
             nodes.push(
-              el("dl", {}, [
-                el("dt", { text: "Machine" }),
-                el("dd", { text: [review.platform, review.arch].filter(Boolean).join(" · ") || "Unknown" }),
-                el("dt", { text: "systemd user" }),
-                el("dd", { text: review.systemdUser === true ? "Available" : review.systemdUser === false ? "Not available" : "Unknown" }),
-                el("dt", { text: "GUI driver" }),
-                el("dd", { text: "cua-driver " + driver.version + " (pinned) · " + (driver.installed ? "installed and verified" : "not installed") }),
-                el("dt", { text: "SHA-256" }),
-                el("dd", { class: "mono", text: driver.archiveSha256 }),
-                el("dt", { text: "Download" }),
-                el("dd", { class: "mono", text: driver.url }),
-                el("dt", { text: "Installs to" }),
-                el("dd", { class: "mono", text: driver.destination }),
-              ]),
+              el("p", {
+                class: item.manualContinuationRequired ? "error" : "hint",
+                text: item.manualContinuationRequired
+                  ? "Setup finished, but the agent wasn't resumed automatically" +
+                    (item.message ? ": " + item.message : "") +
+                    ". Ask it to continue in its thread."
+                  : item.message || "The agent that needed setup was asked to continue.",
+              }),
             );
-          }
-          if (job) {
-            var progress = typeof job.progress === "string" ? " (" + job.progress + ")" : "";
-            var line =
-              job.state === "queued"
-                ? "Driver install queued…"
-                : job.state === "running"
-                  ? "Installing driver" + progress + "…"
-                  : job.state === "succeeded"
-                    ? "Driver installed."
-                    : job.state === "cancelled"
-                      ? "Driver install cancelled."
-                      : "Driver install failed: " + (job.error || job.code || "unknown error") + ". Review and try again.";
-            if (active || (review && !review.ready))
-              nodes.push(el("p", { class: job.state === "failed" ? "error" : "hint", text: line }));
-          }
+          });
           if (setup.error) nodes.push(el("p", { class: "error", text: setup.error }));
-          var canApprove =
-            review &&
-            !review.ready &&
-            !active &&
-            !setup.busy &&
-            systemBlockers(review).length === 0 &&
-            !(review.driver && review.driver.installed);
+          var canApprove = review && !review.ready && !active && !setup.busy && systemBlockers(review).length === 0;
           nodes.push(
             el("div", { class: "actions" }, [
               review && !review.ready && !active
@@ -1140,12 +1656,19 @@
                     type: "button",
                     class: "primary",
                     disabled: !canApprove,
-                    text: job && job.state === "failed" ? "Retry install" : "Approve and install driver",
+                    text:
+                      job && job.state === "failed"
+                        ? "Retry setup"
+                        : vm
+                          ? "Approve and prepare Omarchy VM"
+                          : review.packages && review.packages.length
+                            ? "Approve and install"
+                            : "Approve and install driver",
                     onclick: startSetup,
                   })
                 : null,
               active
-                ? el("button", { type: "button", disabled: setup.busy, text: "Cancel install", onclick: cancelJob })
+                ? el("button", { type: "button", disabled: setup.busy, text: "Cancel setup", onclick: cancelJob })
                 : null,
               el("button", {
                 type: "button",
@@ -1162,20 +1685,92 @@
 
         var STATE_LABELS = {
           live: "Live",
-          starting: "Starting…",
-          stopping: "Stopping…",
+          starting: "Starting",
+          stopping: "Stopping",
           stopped: "Stopped",
           cleanup_failed: "Cleanup failed",
-          deleting: "Deleting…",
+          "recovery-required": "Needs recovery",
+          deleting: "Deleting",
         };
+        var STATE_TONES = {
+          live: "",
+          starting: "warn",
+          stopping: "warn",
+          deleting: "warn",
+          cleanup_failed: "bad",
+          "recovery-required": "bad",
+        };
+        // Always visible: it is what decides whether to let an agent use this machine at all.
+        var CAVEAT = {
+          realm: "Private display, input and clipboard. Not a sandbox: it shares this machine's files and network.",
+          "omarchy-vm":
+            "Its own disk, kernel and desktop. Files are copied only when asked, and its network can reach services on this machine.",
+        };
+        var PAUSE_ICON =
+          '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+        var PLAY_ICON =
+          '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>';
+
+        function machineName() {
+          return isVm() ? "VM" : "desktop";
+        }
+
+        // What the screen area says when there is no picture to show, and the one action that helps.
+        function screenEmpty() {
+          var status = state.status;
+          var r = realm();
+          var mode = status.mode;
+          if (isLive()) {
+            if (state.frameError) return { text: "Capture failed: " + state.frameError, action: "retry" };
+            if (!visible()) return { text: "Paused while this panel is hidden." };
+            if (!state.watching && !isControlled()) return { text: "Watching is paused.", action: "watch" };
+            return { text: "Loading the first capture…" };
+          }
+          if (status.starting || (r && r.state === "starting") || pending(status.startAttempt)) {
+            var attempt = status.starting || status.startAttempt || {};
+            var progress = typeof attempt.progress === "string" ? attempt.progress : null;
+            return {
+              title: "Starting…",
+              text: progress || (isVm() ? "A VM boot can take a minute or more." : null),
+            };
+          }
+          if (r && (r.state === "stopping" || r.state === "deleting")) return { title: STATE_LABELS[r.state] + "…" };
+          if (r && r.state === "recovery-required")
+            return {
+              title: "Needs recovery",
+              text: "Its files changed after it stopped, so it can't be resumed." + (r.recoveryReason ? " " + r.recoveryReason : ""),
+              action: "realms",
+            };
+          if (r && r.state === "cleanup_failed") return { title: "Cleanup didn't finish", action: "stop" };
+          if (!setupReady()) return { title: "Setup needed", text: "A one-time setup on the machine running T3 Code.", action: "setup" };
+          if (r && r.state === "stopped")
+            return {
+              title: "Stopped",
+              text: "Its files are kept." + (r.lastActivity ? " Last active " + lastActive(r.lastActivity) + "." : ""),
+              action: mode === "realm" ? "start" : "on",
+            };
+          return {
+            title: "Not started",
+            text: mode === "realm" ? "The agent starts it when it needs a desktop." : null,
+            action: mode === "realm" ? "start" : "on",
+          };
+        }
+        var SCREEN_ACTIONS = { retry: "Retry", watch: "Watch", realms: "All Realms", stop: "Stop…", setup: "Review setup", start: "Start", on: "Turn on" };
 
         function renderWatch() {
           var controlled = isControlled();
           var live = isLive();
-          $("watch-section").hidden = !live;
+          var status = state.status;
+          var r = realm();
+          var busy = Boolean(state.busy);
           $("control-banner").hidden = !controlled;
+          var connection = r && r.controlConnection;
+          $("control-text").textContent =
+            connection === "failed"
+              ? "You still have control, but the connection to the desktop was lost. The agent stays paused until you hand back."
+              : "You have control · agent paused";
+          $("screen").classList.toggle("controlled", controlled);
           var surface = $("surface");
-          surface.classList.toggle("controlled", controlled);
           surface.tabIndex = controlled ? 0 : -1;
           if (controlled) {
             surface.setAttribute("role", "application");
@@ -1187,184 +1782,360 @@
             surface.removeAttribute("role");
             surface.removeAttribute("aria-label");
           }
-          $("frame").alt = "Latest capture of this thread's Realm desktop";
-          // A paused view keeps its last capture; errors and missing frames cover it.
-          var showing = !$("frame").hidden;
-          var empty = state.frameError
-            ? "Capture failed: " + state.frameError
-            : showing
-              ? ""
-              : !visible()
-                ? "Paused while this panel is hidden."
-                : !state.watching && !controlled
-                  ? "Watching is paused."
-                  : "Loading the first capture…";
-          $("surface-empty").textContent = empty;
-          $("surface-empty").hidden = empty === "";
           var desktop = desktopSize();
-          surface.style.aspectRatio = desktop ? desktop.w + " / " + desktop.h : "";
-          $("frame-meta").textContent =
-            state.frameError || (!state.watching && !controlled)
-              ? "Paused"
-              : state.frameAt
-                ? "Captured " + state.frameAt
-                : "";
-          var watchButton = $("watch");
-          watchButton.textContent = state.frameError ? "Retry" : state.watching ? "Pause" : "Watch";
-          watchButton.setAttribute("aria-pressed", String(state.watching && !state.frameError));
-          watchButton.hidden = controlled && !state.frameError;
-          $("take").hidden = controlled;
-          $("take").disabled = Boolean(state.busy) || !live;
-          $("handback").hidden = !controlled;
-          $("handback").disabled = Boolean(state.busy);
-          $("banner-handback").disabled = Boolean(state.busy);
+          var ratio = desktop ? desktop.w + " / " + desktop.h : "";
+          if (surface.style.aspectRatio !== ratio) {
+            surface.style.aspectRatio = ratio;
+            document.documentElement.style.setProperty("--ar", desktop ? String(desktop.w / desktop.h) : "1.6");
+          }
+
+          var showing = live && !$("frame").hidden && !state.frameError;
+          var empty = status ? screenEmpty() : { text: "" };
+          $("surface-empty").hidden = showing && (state.watching || controlled) && visible();
+          // Frames re-render this many times a second; touch the DOM only when the message changes.
+          var emptyKey = (empty.title || "") + "\n" + (empty.text || "");
+          if ($("empty-text").dataset.key !== emptyKey) {
+            $("empty-text").dataset.key = emptyKey;
+            $("empty-text").replaceChildren.apply(
+              $("empty-text"),
+              [empty.title ? el("strong", { text: empty.title }) : null, empty.text || null].filter(Boolean),
+            );
+          }
+          var action = $("screen-action");
+          action.hidden = !empty.action;
+          if (action.dataset.action !== (empty.action || "")) {
+            action.dataset.action = empty.action || "";
+            action.textContent = SCREEN_ACTIONS[empty.action] || "";
+          }
+          action.disabled = busy;
+
+          $("overlay").hidden = !live || controlled;
+          var meta = $("frame-meta");
+          var metaText = !state.watching
+            ? "Paused"
+            : [
+                r && r.size ? r.size.replace("x", "×") : null,
+                r && typeof r.windowCount === "number" ? r.windowCount + (r.windowCount === 1 ? " window" : " windows") : null,
+                r && r.kind === "omarchy-vm" && r.memoryMiB ? Math.round(r.memoryMiB / 102.4) / 10 + " GiB RAM" : null,
+                r && r.kind === "omarchy-vm" && r.network === false ? "restricted network" : null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+          if (meta.textContent !== metaText) meta.textContent = metaText;
+          var idle = r ? minutes(r.idleTtlSeconds) : null;
+          var metaTitle = [
+            state.frameAt ? "Captured " + state.frameAt + ". Captures repeat every second or two; they are not a video stream." : null,
+            idle ? "Stops after " + idle + " without agent or viewer activity; its workspace is kept." : null,
+          ]
+            .filter(Boolean)
+            .join(" ");
+          if (meta.title !== metaTitle) meta.title = metaTitle;
+          var watch = $("watch");
+          if (watch.dataset.watching !== String(state.watching)) {
+            watch.dataset.watching = String(state.watching);
+            watch.innerHTML = state.watching ? PAUSE_ICON : PLAY_ICON;
+            watch.setAttribute("aria-label", state.watching ? "Pause watching" : "Watch");
+            watch.title = state.watching ? "Pause watching" : "Watch";
+          }
+          $("take").disabled = busy || !live;
+          $("handback").disabled = busy;
           $("typer").hidden = !controlled;
-          $("watch-hint").textContent = controlled
-            ? "Your pointer and keys go to the Realm while the desktop is focused. Shift+Esc releases the keyboard. Leaving or closing this panel does not hand control back."
-            : "View-only. Frames are periodic captures, about one a second while this panel is visible, not a video stream.";
+        }
+
+        function renderMenus() {
+          var live = isLive();
+          var busy = Boolean(state.busy);
+          $("menu-size").disabled = busy || !live || isControlled();
+          $("repair").disabled = busy || !live;
+          $("more-button").setAttribute("aria-expanded", String(!$("more-menu").hidden));
+          $("kind-button").setAttribute("aria-expanded", String(!$("kind-menu").hidden));
+          var kind = chosenKind();
+          Array.prototype.forEach.call(document.querySelectorAll("#kind-menu [data-kind]"), function (option) {
+            option.setAttribute("aria-checked", String(option.dataset.kind === kind));
+          });
+        }
+
+        // Action notices sit with the controls, so writing one never moves the screen.
+        function placeNotice() {
+          var notice = $("notice");
+          if ($("content").hidden) {
+            if (notice.previousElementSibling !== $("head")) $("head").after(notice);
+          } else if ($("side").firstElementChild !== notice) $("side").prepend(notice);
         }
 
         function render() {
           var status = state.status;
           var content = $("content");
           var badge = $("state-badge");
-          if (!state.threadId) {
+          $("caveat").textContent = CAVEAT[chosenKind()];
+          if (!state.threadId || !status) {
             $("control-banner").hidden = true;
             content.hidden = true;
             badge.hidden = true;
-            setNotice(bridge ? "Open a thread to see its Realm." : "Open this panel inside T3 Code.", false);
-            return;
-          }
-          if (!status) {
-            $("control-banner").hidden = true;
-            content.hidden = true;
-            badge.hidden = true;
-            if (state.loadError) setNotice(state.loadError, true);
+            $("shared-chip").hidden = true;
+            if (!state.threadId) setNotice(bridge ? "Open a thread to see its Realm." : "Open this panel inside T3 Code.", false);
+            else if (state.loadError) setNotice(state.loadError, true);
             else if (!$("notice").textContent) setNotice(LOADING_NOTICE, false);
+            placeNotice();
+            renderMenus();
             return;
           }
           content.hidden = false;
+          placeNotice();
           var r = status.realm;
           var live = isLive();
-          var starting = Boolean(status.starting || (r && r.state === "starting"));
+          var starting = Boolean(status.starting || (r && r.state === "starting") || pending(status.startAttempt));
           var busy = state.busy;
-          var ready = status.setup.ready;
+          var kind = chosenKind();
+          var ready = setupReady();
+          var mode = status.mode;
 
           var badgeState = starting ? "starting" : r ? r.state : null;
           badge.hidden = !badgeState;
           badge.textContent = STATE_LABELS[badgeState] || badgeState || "";
-          badge.className =
-            "badge" +
-            (badgeState === "live" ? " live" : badgeState === "cleanup_failed" ? " bad" : starting ? " warn" : "");
+          badge.className = "pill" + (badgeState === "stopped" ? " off" : STATE_TONES[badgeState] ? " " + STATE_TONES[badgeState] : "");
+          $("shared-chip").hidden = !status.sharedFrom;
+          $("shared-chip").title = SHARED_TEXT;
 
-          var mode = status.mode;
-          $("mode-text").textContent =
-            mode === "realm"
-              ? "On"
-              : mode === "off"
-                ? status.offBy === "agent"
-                  ? "Off · turned off by the agent"
-                  : status.offBy === "user"
-                    ? "Off · turned off by you"
-                    : "Off"
-                : "Not turned on";
-          $("mode-hint").textContent =
-            mode === "realm"
-              ? "The agent may use this desktop. Turning off stops agent use only; the desktop, its workspace and watching stay."
+          var agent = $("agent-row");
+          var agentOn = mode === "realm";
+          agent.setAttribute("aria-checked", String(agentOn));
+          agent.disabled = Boolean(busy) || (!agentOn && !ready);
+          $("agent-meta").textContent =
+            busy === "on"
+              ? "Turning on…"
+              : busy === "off"
+                ? "Turning off…"
+                : !agentOn && !ready
+                  ? "Needs setup"
+                  : mode === "off" && status.offBy === "agent"
+                    ? "Agent turned it off"
+                    : "";
+          agent.title = !agentOn && !ready
+            ? "Finish setup first."
+            : agentOn
+              ? "The agent may use this " + machineName() + ". Turning this off stops agent use only; the " + machineName() + " and its workspace stay."
               : mode === "off" && status.offBy === "user"
-                ? "The agent cannot use the Realm until you turn it on. The desktop and its workspace stay."
-                : mode === "off"
-                  ? "The agent stopped using the Realm and can turn it back on. The desktop and its workspace stay."
-                  : "The agent can turn it on when it needs a desktop, or you can. Turning on starts the desktop.";
-          var turnOn = $("turn-on");
-          turnOn.hidden = mode === "realm";
-          turnOn.disabled = Boolean(busy) || !ready;
-          turnOn.textContent = busy === "on" ? "Turning on…" : "Turn on";
-          turnOn.title = ready ? "" : "Finish setup first";
-          var turnOff = $("turn-off");
-          turnOff.hidden = mode === "off";
-          turnOff.disabled = Boolean(busy);
-          turnOff.textContent = busy === "off" ? "Turning off…" : "Turn off";
+                ? "The agent can't use the Realm until you turn this on."
+                : "Turning this on starts the " + machineName() + " for the agent.";
 
-          var desktopText = "Not started";
-          var desktopHint = mode === "realm" ? "Start it here, or the agent starts it when needed." : "Turning on starts it.";
-          if (starting) {
-            var progress = status.starting && typeof status.starting.progress === "string" ? " " + status.starting.progress : "";
-            desktopText = "Starting…" + progress;
-            desktopHint = "Checking again every few seconds.";
-          } else if (r) {
-            desktopText = STATE_LABELS[r.state] || r.state;
-            if (live) {
-              desktopText +=
-                (r.size ? " · " + r.size.replace("x", "×") : "") +
-                (r.windowCount === null || r.windowCount === undefined
-                  ? ""
-                  : " · " + r.windowCount + (r.windowCount === 1 ? " window" : " windows"));
-              var idle = minutes(r.idleTtlSeconds);
-              desktopHint =
-                (idle ? "Stops after " + idle + " without agent or viewer activity. " : "") +
-                "Stop ends its apps; save app work first. The workspace is kept.";
-            } else if (r.state === "stopped") {
-              desktopHint =
-                "Its workspace is kept" +
-                (r.lastActivity ? " (last active " + clock(r.lastActivity) + ")" : "") +
-                "." +
-                (mode === "realm" ? " The agent starts it again when it needs it." : "");
-            } else if (r.state === "cleanup_failed") {
-              desktopHint = "Stop again to retry cleanup.";
-            } else {
-              desktopHint = "Checking again every few seconds.";
-            }
-          }
-          $("desktop-text").textContent = desktopText;
-          $("desktop-hint").textContent = desktopHint;
-          $("desktop-error").hidden = !(r && r.error);
-          $("desktop-error").textContent = (r && r.error) || "";
-          var start = $("start");
-          start.hidden = mode !== "realm" || live || starting || (r && r.state === "stopping");
-          start.disabled = Boolean(busy) || !ready;
-          start.textContent = busy === "on" ? "Starting…" : "Start";
-          var stoppable = live || starting || (r && r.state === "cleanup_failed");
+          var shownKind = state.confirmSwitch || kind;
+          $("kind-label").textContent = KIND_NAMES[shownKind];
+          $("kind-button").disabled = Boolean(busy) || isControlled();
+          $("switch-confirm").hidden = !state.confirmSwitch;
+          if (state.confirmSwitch)
+            $("switch-text").textContent =
+              "Switch this thread to " + KIND_NAMES[state.confirmSwitch] + "? The running " +
+              KIND_NAMES[kind] + " stops and its apps close; its workspace is kept and you can switch back.";
+          $("switch-confirm-button").disabled = Boolean(busy);
+
+          var stoppable =
+            live ||
+            starting ||
+            Boolean(status.runtimeFailure || status.driverCleanup) ||
+            (r && (r.state === "cleanup_failed" || r.cleanupRequired));
           var stop = $("stop");
           stop.hidden = !stoppable;
           stop.disabled = Boolean(busy);
-          stop.textContent = busy === "stop" ? "Stopping…" : "Stop…";
+          $("stop-label").textContent = busy === "stop" ? "Stopping…" : isVm() ? "Stop VM…" : "Stop desktop…";
           if (!stoppable) state.confirmStop = false;
           $("stop-confirm").hidden = !state.confirmStop;
+          $("stop-text").replaceChildren(
+            el("strong", { text: isVm() ? "Stop this VM?" : "Stop this desktop?" }),
+            " Its apps close and unsaved work in them is lost. The workspace is kept, and it can start again later.",
+          );
+          $("stop-confirm-button").textContent = isVm() ? "Stop VM" : "Stop desktop";
           $("stop-confirm-button").disabled = Boolean(busy);
 
-          $("more").hidden = !live;
+          if (!live) state.sizeOpen = false;
+          $("size-box").hidden = !state.sizeOpen;
           var sizeInput = $("size-input");
           if (document.activeElement !== sizeInput && r && r.size && !sizeInput.dataset.edited) sizeInput.value = r.size;
           $("size-apply").disabled = Boolean(busy) || !live;
-          $("repair").disabled = Boolean(busy) || !live;
 
+          renderProblems();
           renderWatch();
+          renderMenus();
           renderSetup();
         }
 
         // ---- wiring --------------------------------------------------------------------
 
+        function turnOn(kind) {
+          act(
+            "on",
+            { kind: kind },
+            kind === "omarchy-vm"
+              ? "Starting the Omarchy VM. A boot can take a minute or more."
+              : "Starting the desktop. This can take up to 20 seconds.",
+          );
+        }
+
+        // Menus close on outside clicks and Escape, and give focus back to their button.
+        var MENUS = [
+          { button: "more-button", menu: "more-menu" },
+          { button: "kind-button", menu: "kind-menu" },
+        ];
+        function closeMenus(restoreFocus) {
+          MENUS.forEach(function (entry) {
+            var menu = $(entry.menu);
+            if (menu.hidden) return;
+            menu.hidden = true;
+            if (restoreFocus) $(entry.button).focus();
+          });
+          renderMenus();
+        }
+        function toggleMenu(entry) {
+          var menu = $(entry.menu);
+          var opening = menu.hidden;
+          closeMenus(false);
+          menu.hidden = !opening;
+          menu.classList.remove("up");
+          renderMenus();
+          if (opening) {
+            // Open upward when the panel has no room below.
+            if (menu.getBoundingClientRect().bottom > window.innerHeight && $(entry.button).getBoundingClientRect().top > menu.offsetHeight)
+              menu.classList.add("up");
+            var first = menu.querySelector('[aria-checked="true"]:not(:disabled)') || menu.querySelector("button:not(:disabled)");
+            if (first) first.focus();
+          }
+        }
+        MENUS.forEach(function (entry) {
+          $(entry.button).addEventListener("click", function () {
+            toggleMenu(entry);
+          });
+          $(entry.menu).addEventListener("keydown", function (event) {
+            var items = Array.prototype.filter.call($(entry.menu).querySelectorAll("button"), function (item) {
+              return !item.disabled;
+            });
+            var index = items.indexOf(document.activeElement);
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              var step = event.key === "ArrowDown" ? 1 : -1;
+              items[(index + step + items.length) % items.length].focus();
+            } else if (event.key === "Home" || event.key === "End") {
+              event.preventDefault();
+              items[event.key === "Home" ? 0 : items.length - 1].focus();
+            } else if (event.key === "Tab") closeMenus(false);
+          });
+        });
+        document.addEventListener("pointerdown", function (event) {
+          if (!event.target.closest || !event.target.closest(".menu-wrap")) closeMenus(false);
+        });
+        // A click elsewhere in T3 never reaches this frame, so leaving it closes menus too.
+        window.addEventListener("blur", function () {
+          closeMenus(false);
+        });
+        document.addEventListener("keydown", function (event) {
+          // The controlled desktop consumes the Escape presses it forwards.
+          if (event.key !== "Escape" || event.defaultPrevented) return;
+          if (MENUS.some(function (entry) { return !$(entry.menu).hidden; })) {
+            event.preventDefault();
+            closeMenus(true);
+          } else if (state.confirmStop) {
+            event.preventDefault();
+            $("stop-cancel").click();
+          } else if (state.confirmSwitch) {
+            event.preventDefault();
+            $("switch-cancel").click();
+          } else if (state.sizeOpen) {
+            event.preventDefault();
+            $("size-cancel").click();
+          }
+        });
+
         $("refresh").addEventListener("click", function () {
+          closeMenus(false);
           setNotice("", false);
           state.frameError = null;
           refresh();
           if (setup.review) reviewSetup();
           pumpFrames();
         });
+        $("repair").addEventListener("click", function () {
+          closeMenus(false);
+          act("repair", {}, "Resetting the GUI driver connection…");
+        });
+        $("menu-size").addEventListener("click", function () {
+          closeMenus(false);
+          state.sizeOpen = true;
+          render();
+          $("size-input").focus();
+          $("size-input").select();
+        });
+        $("size-cancel").addEventListener("click", function () {
+          state.sizeOpen = false;
+          delete $("size-input").dataset.edited;
+          render();
+          $("more-button").focus();
+        });
+        $("shared-chip").addEventListener("click", function () {
+          setNotice($("shared-chip").getAttribute("aria-expanded") === "true" ? "" : SHARED_TEXT, false);
+        });
         $("open-realms").addEventListener("click", function () {
           call("open-realms").catch(function (error) {
             setNotice(parseError(error).text, true);
           });
         });
-        $("turn-on").addEventListener("click", function () {
-          act("on", { kind: "realm" }, "Turning on and starting the desktop. This can take up to 20 seconds.");
+        $("agent-row").addEventListener("click", function () {
+          if (state.status && state.status.mode === "realm") act("off", {}, "Turning off agent use…");
+          else turnOn(chosenKind());
         });
-        $("turn-off").addEventListener("click", function () {
-          act("off", {}, "Turning off agent use…");
+        function chooseKind(next) {
+          var status = state.status;
+          if (!status || next === chosenKind()) return;
+          var r = realm();
+          if (status.mode === "realm" && r && (isLive() || isTransitional())) {
+            state.confirmSwitch = next;
+            render();
+            $("switch-cancel").focus();
+            return;
+          }
+          if (status.mode === "realm") {
+            act("on", { kind: next }, "Switching to " + KIND_NAMES[next] + "…");
+            return;
+          }
+          state.kindDraft = next;
+          setup.review = null;
+          setup.job = null;
+          setup.error = null;
+          render();
+          reviewSetup();
+        }
+        Array.prototype.forEach.call(document.querySelectorAll("#kind-menu [data-kind]"), function (option) {
+          option.addEventListener("click", function () {
+            closeMenus(false);
+            $("kind-button").focus();
+            chooseKind(option.dataset.kind);
+          });
         });
-        $("start").addEventListener("click", function () {
-          act("on", { kind: "realm" }, "Starting the desktop. This can take up to 20 seconds.");
+        $("switch-cancel").addEventListener("click", function () {
+          state.confirmSwitch = null;
+          render();
+          $("kind-button").focus();
+        });
+        $("switch-confirm-button").addEventListener("click", function () {
+          var next = state.confirmSwitch;
+          state.confirmSwitch = null;
+          dropInput();
+          stopFrames();
+          state.frameDesktop = null;
+          $("frame").hidden = true;
+          act("on", { kind: next }, "Switching to " + KIND_NAMES[next] + ". The current one stops; its workspace is kept.");
+        });
+        $("screen-action").addEventListener("click", function () {
+          var action = $("screen-action").dataset.action;
+          if (action === "retry" || action === "watch") {
+            state.frameError = null;
+            state.watching = true;
+            renderWatch();
+            pumpFrames();
+          } else if (action === "realms") $("open-realms").click();
+          else if (action === "stop") $("stop").click();
+          else if (action === "setup") {
+            if (!setup.review && !setup.busy) reviewSetup();
+            $("setup-section").scrollIntoView({ block: "start" });
+          } else if (action === "start" || action === "on") turnOn(chosenKind());
         });
         $("stop").addEventListener("click", function () {
           state.confirmStop = true;
@@ -1379,15 +2150,12 @@
         $("stop-confirm-button").addEventListener("click", function () {
           state.confirmStop = false;
           dropInput();
-          act("stop", {}, "Stopping the desktop…").then(function () {
+          act("stop", {}, isVm() ? "Stopping the VM…" : "Stopping the desktop…").then(function () {
             if (!$("stop").hidden) $("stop").focus();
           });
         });
         $("watch").addEventListener("click", function () {
-          if (state.frameError) {
-            state.frameError = null;
-            state.watching = true;
-          } else state.watching = !state.watching;
+          state.watching = !state.watching;
           if (!state.watching) stopFrames();
           renderWatch();
           pumpFrames();
@@ -1414,7 +2182,6 @@
           });
         }
         $("handback").addEventListener("click", handBack);
-        $("banner-handback").addEventListener("click", handBack);
         $("type-send").addEventListener("click", function () {
           var field = $("type-text");
           if (!field.value) return;
@@ -1430,6 +2197,12 @@
         $("size-input").addEventListener("input", function () {
           $("size-input").dataset.edited = "1";
         });
+        $("size-input").addEventListener("keydown", function (event) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            $("size-apply").click();
+          }
+        });
         $("size-apply").addEventListener("click", function () {
           var value = $("size-input").value.trim().toLowerCase().replace("×", "x");
           var size = parseSize(value);
@@ -1440,10 +2213,9 @@
           }
           delete $("size-input").dataset.edited;
           state.frameDesktop = null;
+          state.sizeOpen = false;
           act("size", { size: value }, "Resizing the desktop…");
-        });
-        $("repair").addEventListener("click", function () {
-          act("repair", {}, "Resetting the GUI driver connection…");
+          $("more-button").focus();
         });
 
         wireSurface();
@@ -1477,8 +2249,12 @@
           state.frameError = null;
           state.frameDesktop = null;
           state.confirmStop = false;
+          state.sizeOpen = false;
+          state.kindDraft = null;
+          state.confirmSwitch = null;
           state.watching = true;
           setup.review = null;
+          setup.job = null;
           setup.error = null;
           $("frame").hidden = true;
           $("frame").removeAttribute("src");

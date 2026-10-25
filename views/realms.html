@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Realms</title>
     <style>
@@ -372,16 +373,17 @@
         <button type="button" class="ghost" id="refresh">Refresh</button>
       </header>
       <p class="lede">
-        Private Linux desktops, one per thread, on the machine running this T3 Code server. A
-        Realm separates an agent's GUI apps from your desktop; it shares this machine's files and
-        network, so it is not a sandbox. Stop ends a desktop and keeps its workspace. Deleting a
-        workspace is separate and permanent.
+        Private test desktops, one per thread, on the machine running this T3 Code server: a
+        lightweight Desktop that shares this machine's files and network, or an Omarchy VM with its
+        own disk and kernel. Neither is a hostile-code sandbox. Stop ends compute and keeps the
+        workspace. Deleting a workspace is separate and permanent.
       </p>
       <div class="notice" id="notice" role="status" aria-live="polite"></div>
       <section aria-labelledby="setup-heading" id="setup-section" hidden>
         <h2 id="setup-heading">Setup</h2>
         <div id="setup"></div>
       </section>
+      <div id="recovery"></div>
       <div id="list"></div>
     </main>
     <script>
@@ -401,6 +403,7 @@
           deleting: null,
           listInFlight: false,
           listAgain: false,
+          prune: null,
         };
         var timers = { list: null, job: null };
         var setup = { review: null, job: null, busy: false, error: null };
@@ -470,8 +473,19 @@
           stopping: "Stopping…",
           stopped: "Stopped",
           cleanup_failed: "Cleanup failed",
+          "recovery-required": "Needs recovery",
           deleting: "Deleting…",
         };
+        var KIND_NAMES = { realm: "Desktop", "omarchy-vm": "Omarchy VM" };
+        var MAX_LIST_PAGES = 20;
+        function listPages(offset, collected, pages) {
+          return call("list", offset ? { offset: offset } : {}).then(function (result) {
+            var data = (result && result.data) || {};
+            var all = collected.concat(Array.isArray(data.realms) ? data.realms : []);
+            if (typeof data.nextOffset === "number" && pages + 1 < MAX_LIST_PAGES) return listPages(data.nextOffset, all, pages + 1);
+            return { realms: all, setup: data.setup || null };
+          });
+        }
         function transitional(realm) {
           return realm.state === "starting" || realm.state === "stopping" || realm.state === "deleting";
         }
@@ -482,7 +496,7 @@
         function scheduleList() {
           clearTimeout(timers.list);
           timers.list = null;
-          if (!visible() || state.deleting || state.confirmStop) return;
+          if (!visible() || state.deleting || state.confirmStop || state.prune) return;
           var fast = state.realms.some(transitional);
           timers.list = setTimeout(load, fast ? 1500 : 10000);
         }
@@ -493,12 +507,11 @@
             return;
           }
           state.listInFlight = true;
-          call("list")
+          listPages(0, [], 0)
             .then(
-              function (result) {
-                var data = (result && result.data) || {};
-                state.realms = Array.isArray(data.realms) ? data.realms : [];
-                state.setupSummary = data.setup || null;
+              function (data) {
+                state.realms = data.realms;
+                state.setupSummary = data.setup;
                 state.loadError = null;
                 if (state.setupSummary && !state.setupSummary.ready && !setup.review && !setup.busy) reviewSetup();
               },
@@ -549,11 +562,12 @@
           });
         }
 
-        function reviewDelete(realm) {
+        function reviewDelete(realm, discard) {
           state.confirmStop = null;
-          state.deleting = { realmId: realm.id, threadId: realm.threadId, review: null, phrase: "", error: null };
+          state.prune = null;
+          state.deleting = { realmId: realm.id, threadId: realm.threadId, discard: Boolean(discard), review: null, phrase: "", error: null };
           render();
-          call("delete-review", { realmId: realm.id }).then(
+          call("delete-review", discard ? { realmId: realm.id, discard: true } : { realmId: realm.id }).then(
             function (result) {
               if (!state.deleting || state.deleting.realmId !== realm.id) return;
               state.deleting.review = result.data;
@@ -576,8 +590,10 @@
           run(
             review.realmId,
             "delete",
-            { realmId: review.realmId, phrase: deleting.phrase, token: review.token },
-            "Deleting the workspace…",
+            deleting.discard
+              ? { realmId: review.realmId, discard: true, phrase: deleting.phrase, token: review.token }
+              : { realmId: review.realmId, phrase: deleting.phrase, token: review.token },
+            deleting.discard ? "Discarding the VM workspace…" : "Deleting the workspace…",
           ).then(function (result) {
             if (!result.error) {
               state.deleting = null;
@@ -610,8 +626,17 @@
           var review = deleting.review;
           var busy = Boolean(state.busy[realm.id]);
           var record = review && review.snapshot && review.snapshot.record;
-          var workspace = record && record.workspace_dir;
-          var nodes = [el("strong", { text: "Delete this Realm's workspace permanently?" })];
+          var vm = realm.kind === "omarchy-vm";
+          var workspace = record && (record.workspace_dir || record.session_dir);
+          var nodes = [
+            el("strong", {
+              text: deleting.discard
+                ? "Discard this VM's workspace? Its files no longer match what was recorded, so nothing in it is checked."
+                : vm
+                  ? "Delete this VM's workspace permanently?"
+                  : "Delete this Realm's workspace permanently?",
+            }),
+          ];
           if (deleting.error) nodes.push(el("p", { class: "error", text: deleting.error }));
           if (!review) {
             nodes.push(el("p", { class: "hint", text: deleting.error ? "" : "Checking exactly what would be deleted…" }));
@@ -638,12 +663,16 @@
                   : el("span", { text: "This Realm's retained workspace" }),
                 el("span", {
                   class: "hint",
-                  text: " — this Realm's workspace directory, including its home directory and any files apps saved there.",
+                  text: vm
+                    ? " — this VM's own disk and everything saved in the guest."
+                    : " — this Realm's workspace directory, including its home directory and any files apps saved there.",
                 }),
               ]),
               el("dt", { text: "Keeps" }),
               el("dd", {
-                text: "The thread and its history, your project files, and every other thread's Realm.",
+                text:
+                  "The thread and its history, your project files, and every other thread's Realm." +
+                  (vm ? " The shared Omarchy base and download stay." : ""),
               }),
             ]),
           );
@@ -666,7 +695,7 @@
             type: "button",
             class: "danger",
             disabled: busy || deleting.phrase !== review.phrase,
-            text: busy ? "Deleting…" : "Delete workspace",
+            text: busy ? (deleting.discard ? "Discarding…" : "Deleting…") : deleting.discard ? "Discard workspace" : "Delete workspace",
             onclick: confirmDelete,
           });
           input.addEventListener("input", function () {
@@ -728,12 +757,17 @@
 
         function renderRow(realm) {
           var busy = state.busy[realm.id];
-          var stoppable = realm.state === "live" || realm.state === "starting" || realm.state === "cleanup_failed";
+          var stoppable =
+            realm.state === "live" ||
+            realm.state === "starting" ||
+            realm.state === "cleanup_failed" ||
+            (realm.cleanupRequired === true && realm.state !== "recovery-required");
           var deletable = realm.state === "stopped" || realm.state === "deleting";
+          var discardable = realm.kind === "omarchy-vm" && realm.state === "recovery-required";
           var badgeClass =
             realm.state === "live"
               ? "badge live"
-              : realm.state === "cleanup_failed"
+              : realm.state === "cleanup_failed" || realm.state === "recovery-required"
                 ? "badge bad"
                 : transitional(realm)
                   ? "badge warn"
@@ -760,13 +794,22 @@
               el("td", { "data-label": "State" }, [
                 el("span", { class: badgeClass, text: STATE_LABELS[realm.state] || realm.state }),
                 realm.controlledBy === "user" ? el("span", { class: "hint", text: " · you have control" }) : null,
+                realm.recoveryReason ? el("span", { class: "state-error", text: realm.recoveryReason }) : null,
+                realm.cleanupRequired === true && realm.state !== "recovery-required"
+                  ? el("span", { class: "state-error", text: "Cleanup not confirmed. Stop again to retry." })
+                  : null,
                 realm.error ? el("span", { class: "state-error", text: realm.error }) : null,
               ]),
-              el("td", { class: "num", "data-label": "Size", text: realm.size ? realm.size.replace("x", "×") : "—" }),
+              el("td", { "data-label": "Kind", text: KIND_NAMES[realm.kind || "realm"] || realm.kind }),
               el("td", {
                 class: "num",
-                "data-label": "Windows",
-                text: realm.windowCount === null || realm.windowCount === undefined ? "—" : String(realm.windowCount),
+                "data-label": "Size",
+                text:
+                  (realm.size ? realm.size.replace("x", "×") : "—") +
+                  (realm.windowCount === null || realm.windowCount === undefined
+                    ? ""
+                    : " · " + realm.windowCount + (realm.windowCount === 1 ? " window" : " windows")) +
+                  (realm.kind === "omarchy-vm" && realm.memoryMiB ? " · " + Math.round(realm.memoryMiB / 102.4) / 10 + " GiB RAM" : ""),
               }),
               el("td", { "data-label": "Active", text: relative(realm.lastActivity), title: realm.lastActivity ? new Date(realm.lastActivity * 1000).toLocaleString() : null }),
               el("td", { "data-label": "Idle stop", text: duration(realm.idleTtlSeconds) }),
@@ -803,6 +846,20 @@
                         },
                       })
                     : null,
+                  discardable
+                    ? el("button", {
+                        type: "button",
+                        class: "danger",
+                        id: "delete-" + realm.id,
+                        disabled: Boolean(busy),
+                        "aria-label": "Discard workspace of VM " + realm.id,
+                        text: "Discard workspace…",
+                        onclick: function () {
+                          reviewDelete(realm, true);
+                          scheduleList();
+                        },
+                      })
+                    : null,
                 ]),
               ]),
             ]),
@@ -810,8 +867,188 @@
           if (state.confirmStop === realm.id && stoppable)
             rows.push(el("tr", { class: "confirm" }, [el("td", { colspan: "7" }, [el("div", { class: "box", role: "group", "aria-label": "Confirm stop" }, stopPanel(realm))])]));
           if (state.deleting && state.deleting.realmId === realm.id)
-            rows.push(el("tr", { class: "confirm" }, [el("td", { colspan: "7" }, [el("div", { class: "box", role: "group", "aria-label": "Confirm workspace deletion" }, deletePanel(realm))])]));
+            rows.push(el("tr", { class: "confirm" }, [el("td", { colspan: "7" }, [el("div", { class: "box", role: "group", "aria-label": state.deleting.discard ? "Confirm workspace discard" : "Confirm workspace deletion" }, deletePanel(realm))])]));
           return rows;
+        }
+
+        // ---- VM recovery ---------------------------------------------------------------
+
+        var PRUNE_PHRASE = "discard recovery workspaces";
+
+        function reviewPrune() {
+          state.deleting = null;
+          state.confirmStop = null;
+          state.prune = { review: null, phrase: "", error: null, busy: false };
+          render();
+          call("prune-review", {}).then(
+            function (result) {
+              if (!state.prune) return;
+              state.prune.review = result.data;
+              render();
+              var field = $("prune-phrase");
+              if (field) field.focus();
+            },
+            function (error) {
+              if (!state.prune) return;
+              state.prune.error = parseError(error).text;
+              render();
+            },
+          );
+        }
+
+        function closePrune() {
+          state.prune = null;
+          render();
+          scheduleList();
+          var button = $("prune-open");
+          if (button) button.focus();
+        }
+
+        function confirmPrune() {
+          var prune = state.prune;
+          if (!prune || !prune.review || prune.phrase !== PRUNE_PHRASE) return;
+          prune.busy = true;
+          setNotice("Discarding VM workspaces that need recovery…", false);
+          render();
+          call("prune", { phrase: prune.phrase, token: prune.review.token }).then(
+            function (result) {
+              var deleted = (result.data && result.data.deleted) || [];
+              state.prune = null;
+              setNotice(
+                deleted.length
+                  ? "Discarded " + deleted.length + (deleted.length === 1 ? " VM workspace." : " VM workspaces.")
+                  : "Nothing was discarded.",
+                false,
+              );
+              load();
+            },
+            function (error) {
+              if (!state.prune) return;
+              // The set may have changed since review; the person confirms the new one.
+              state.prune = { review: null, phrase: "", error: parseError(error).text + " Review again.", busy: false };
+              setNotice("", false);
+              render();
+            },
+          );
+        }
+
+        function prunePanel() {
+          var prune = state.prune;
+          var review = prune.review;
+          var nodes = [el("strong", { text: "Discard every VM workspace that needs recovery?" })];
+          if (prune.error) nodes.push(el("p", { class: "error", text: prune.error }));
+          if (!review) {
+            nodes.push(el("p", { class: "hint", text: prune.error ? "" : "Checking exactly what would be discarded…" }));
+            nodes.push(
+              el("div", { class: "actions" }, [
+                el("button", { type: "button", class: "ghost", text: "Cancel", onclick: closePrune }),
+                prune.error ? el("button", { type: "button", text: "Review again", onclick: reviewPrune }) : null,
+              ]),
+            );
+            return nodes;
+          }
+          var doomed = review.delete || [];
+          var kept = review.kept || [];
+          nodes.push(
+            el("dl", {}, [
+              el("dt", { text: "Discards" }),
+              el(
+                "dd",
+                {},
+                doomed.length
+                  ? [el("ul", { class: "plain mono" }, doomed.map(function (item) { return el("li", { text: item.id }); }))]
+                  : [el("span", { text: "Nothing: no stopped VM workspace needs recovery." })],
+              ),
+              el("dt", { text: "Keeps" }),
+              el("dd", {}, [
+                el("span", {
+                  text: "Running and healthy stopped VMs, every Desktop Realm, and the shared Omarchy base." +
+                    (kept.length ? " Not discarded:" : ""),
+                }),
+                kept.length
+                  ? el(
+                      "ul",
+                      { class: "plain" },
+                      kept.map(function (item) {
+                        return el("li", {}, [
+                          el("span", { class: "mono", text: item.id || "" }),
+                          el("span", { class: "hint", text: " — " + (item.reason || item.status || "kept") }),
+                        ]);
+                      }),
+                    )
+                  : null,
+              ]),
+            ]),
+          );
+          if (!doomed.length) {
+            nodes.push(el("div", { class: "actions" }, [el("button", { type: "button", class: "ghost", text: "Close", onclick: closePrune })]));
+            return nodes;
+          }
+          var input = el("input", {
+            type: "text",
+            id: "prune-phrase",
+            autocomplete: "off",
+            autocapitalize: "off",
+            spellcheck: "false",
+            "aria-describedby": "prune-phrase-label",
+          });
+          input.value = prune.phrase;
+          var confirm = el("button", {
+            type: "button",
+            class: "danger",
+            disabled: prune.busy || prune.phrase !== PRUNE_PHRASE,
+            text: prune.busy ? "Discarding…" : "Discard workspaces",
+            onclick: confirmPrune,
+          });
+          input.addEventListener("input", function () {
+            prune.phrase = input.value;
+            confirm.disabled = prune.busy || prune.phrase !== PRUNE_PHRASE;
+          });
+          input.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" && !confirm.disabled) confirmPrune();
+            if (event.key === "Escape") closePrune();
+          });
+          nodes.push(
+            el("p", { class: "hint", text: "Their files no longer match what was recorded, so their contents are not checked. This cannot be undone." }),
+            el("label", { for: "prune-phrase", id: "prune-phrase-label" }, ["Type ", el("code", { text: PRUNE_PHRASE }), " to confirm"]),
+            el("div", { class: "field" }, [
+              input,
+              el("button", { type: "button", class: "ghost", disabled: prune.busy, text: "Cancel", onclick: closePrune }),
+              confirm,
+            ]),
+          );
+          return nodes;
+        }
+
+        function renderRecovery() {
+          var container = $("recovery");
+          var count = state.realms.filter(function (realm) {
+            return realm.kind === "omarchy-vm" && realm.state === "recovery-required";
+          }).length;
+          if (!count && !state.prune) {
+            container.replaceChildren();
+            return;
+          }
+          var focused = document.activeElement && document.activeElement.id;
+          var nodes = [];
+          if (state.prune) {
+            nodes.push(el("div", { class: "box", role: "group", "aria-label": "Confirm discarding VM workspaces" }, prunePanel()));
+          } else {
+            nodes.push(
+              el("div", { class: "box", role: "note" }, [
+                el("span", {
+                  text:
+                    count + (count === 1 ? " stopped VM workspace needs" : " stopped VM workspaces need") +
+                    " recovery: its files changed after it stopped, so it can't be resumed or deleted normally.",
+                }),
+                el("div", { class: "actions" }, [
+                  el("button", { type: "button", id: "prune-open", text: "Discard all needing recovery…", onclick: reviewPrune }),
+                ]),
+              ]),
+            );
+          }
+          container.replaceChildren.apply(container, nodes);
+          if (focused && $(focused) && container.contains($(focused))) $(focused).focus();
         }
 
         function render() {
@@ -824,6 +1061,7 @@
             ? ""
             : realms.length + (realms.length === 1 ? " Realm" : " Realms") + (live ? " · " + live + " live" : "");
           renderSetup();
+          renderRecovery();
           if (state.loading) {
             list.replaceChildren(el("div", { class: "empty", text: "Loading…" }));
             return;
@@ -859,7 +1097,7 @@
           nodes.push(
             el("table", {}, [
               el("thead", {}, [
-                el("tr", {}, ["Thread", "State", "Size", "Windows", "Last active", "Idle stop", ""].map(function (label) {
+                el("tr", {}, ["Thread", "State", "Kind", "Size", "Last active", "Idle stop", ""].map(function (label) {
                   return el("th", { scope: "col", text: label || null }, label ? [] : [el("span", { class: "sr-only", text: "Actions" })]);
                 })),
               ]),
@@ -880,7 +1118,7 @@
           setup.busy = true;
           setup.error = null;
           renderSetup();
-          return call("setup-review")
+          return call("setup-review", { kind: "realm" })
             .then(
               function (result) {
                 setup.review = result.data;
@@ -901,7 +1139,7 @@
           setup.busy = true;
           setup.error = null;
           renderSetup();
-          call("setup-start", { reviewId: setup.review.reviewId })
+          call("setup-start", { kind: "realm", reviewId: setup.review.reviewId })
             .then(
               function (result) {
                 if (result.data && result.data.jobId) {
@@ -970,10 +1208,16 @@
         }
 
         // A missing driver is what setup installs; everything else needs the system's package manager.
+        /** What setup cannot do itself. Plans that list `blockers` say so; older ones only list `missing`. */
         function systemBlockers(review) {
-          return (review.missing || []).filter(function (name) {
-            return name !== "verified cua-driver";
+          var names = Array.isArray(review.blockers) ? review.blockers : review.missing || [];
+          return names.filter(function (name, index, all) {
+            return all.indexOf(name) === index && name !== "verified cua-driver";
           });
+        }
+        function progressText(progress) {
+          if (typeof progress === "string") return progress;
+          return progress && typeof progress.message === "string" ? progress.message : null;
         }
 
         function renderSetup() {
@@ -989,7 +1233,7 @@
             el("p", {
               class: "hint",
               text:
-                "Realms need a one-time setup on the machine running T3 Code. Review what it needs, then approve the pinned GUI driver install." +
+                "Realms need a one-time setup on the machine running T3 Code. Review what it needs, then approve it. The Omarchy VM has its own setup in a thread's Realm panel." +
                 (message ? " " + message + "." : ""),
             }),
           );
@@ -1009,8 +1253,18 @@
                   ),
                   el("span", {
                     class: "hint",
-                    text: "Install these with your system package manager, then review again. Realms never runs sudo or system installers.",
+                    text: "Fix these on the machine running T3 Code, then review again. Realms never changes SSH keys, device permissions or your system's package keyring.",
                   }),
+                ]),
+              );
+            }
+            if (review.packages && review.packages.length && review.command) {
+              nodes.push(
+                el("div", { class: "box", role: "note" }, [
+                  el("strong", { text: "Installs system packages" }),
+                  el("span", { class: "mono", text: review.packages.join(" ") }),
+                  el("span", { class: "hint", text: "Approving runs exactly this on the machine running T3 Code, which asks for your password there (Polkit):" }),
+                  el("code", { class: "mono", text: review.command }),
                 ]),
               );
             }
@@ -1032,17 +1286,20 @@
             );
           }
           if (job && (active || (review && !review.ready))) {
-            var progress = typeof job.progress === "string" ? " (" + job.progress + ")" : "";
+            var text = progressText(job.progress);
+            var progress = text ? " (" + text + ")" : "";
             var line =
               job.state === "queued"
-                ? "Driver install queued…"
-                : job.state === "running"
-                  ? "Installing driver" + progress + "…"
-                  : job.state === "succeeded"
-                    ? "Driver installed."
-                    : job.state === "cancelled"
-                      ? "Driver install cancelled."
-                      : "Driver install failed: " + (job.error || job.code || "unknown error") + ". Review and try again.";
+                ? "Setup queued…"
+                : job.state === "running" && job.progress && job.progress.stage === "packages"
+                  ? "Installing system packages" + progress + "… Approve the password prompt on the machine running T3 Code. Cancelling waits for the package manager to finish."
+                  : job.state === "running"
+                    ? "Setting up" + progress + "…"
+                    : job.state === "succeeded"
+                      ? "Setup finished."
+                      : job.state === "cancelled"
+                        ? "Setup cancelled."
+                        : "Setup failed: " + (job.error || job.code || "unknown error") + ". Review and try again.";
             nodes.push(el("p", { class: job.state === "failed" ? "error" : "hint", text: line }));
           }
           if (setup.error) nodes.push(el("p", { class: "error", text: setup.error }));
@@ -1051,8 +1308,7 @@
             !review.ready &&
             !active &&
             !setup.busy &&
-            systemBlockers(review).length === 0 &&
-            !(review.driver && review.driver.installed);
+            systemBlockers(review).length === 0;
           nodes.push(
             el("div", { class: "actions" }, [
               review && !review.ready && !active
@@ -1060,12 +1316,17 @@
                     type: "button",
                     class: "primary",
                     disabled: !canApprove,
-                    text: job && job.state === "failed" ? "Retry install" : "Approve and install driver",
+                    text:
+                      job && job.state === "failed"
+                        ? "Retry setup"
+                        : review.packages && review.packages.length
+                          ? "Approve and install"
+                          : "Approve and install driver",
                     onclick: startSetup,
                   })
                 : null,
               active
-                ? el("button", { type: "button", disabled: setup.busy, text: "Cancel install", onclick: cancelJob })
+                ? el("button", { type: "button", disabled: setup.busy, text: "Cancel setup", onclick: cancelJob })
                 : null,
               el("button", {
                 type: "button",

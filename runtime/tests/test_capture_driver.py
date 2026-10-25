@@ -235,7 +235,7 @@ class DriverLauncherTests(unittest.TestCase):
         with patch('t3realms.manager.Manager', return_value=manager), \
                 patch('t3realms.install_driver.execution_verified', return_value=True), \
                 patch('t3realms.driver.sandbox_command', return_value=['/usr/bin/false']) as command, \
-                patch('t3realms.driver.os.execve') as execute, \
+                patch('t3realms.driver_lifetime.run_contained', return_value=0) as execute, \
                 patch.object(sys, 'argv', ['launcher', 'mcp']):
             driver_main(str(self.home), self.record['id'], str(self.home / 'bin/cua-driver'), self.record['generation'])
             args = command.call_args.args[2]
@@ -243,7 +243,7 @@ class DriverLauncherTests(unittest.TestCase):
             self.assertIn('--no-overlay', args)
             self.assertEqual(args[args.index('--cursor-theme') + 1], 'private.cursor')
             self.assertEqual(args[args.index('--socket') + 1], str(self.runtime / 'cua-driver.sock'))
-            env = execute.call_args.args[2]
+            env = execute.call_args.args[3]
             self.assertEqual(env['CUA_DRIVER_RS_TELEMETRY_ENABLED'], '0')
             self.assertNotIn('HYPRLAND_INSTANCE_SIGNATURE', env)
 

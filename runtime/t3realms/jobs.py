@@ -17,6 +17,7 @@ from .errors import error_code
 from .lifecycle import (BusyError, NotFoundError, OwnershipError, RealmError,
                         alive, atomic_json, identity, private_json)
 
+KINDS = ('start', 'setup', 'driver_install', 'selftest', 'vm_setup', 'vm_driver', 'transfer')
 TERMINAL = {'succeeded', 'failed', 'cancelled'}
 RETENTION_SECONDS = 86400
 RECORD_LIMIT = 200
@@ -61,7 +62,7 @@ class Jobs:
             raise NotFoundError('job not found: ' + job_id)
         record = private_json(path)
         if (not isinstance(record, dict) or record.get('job_id') != job_id
-                or record.get('kind') not in ('start', 'driver_install', 'selftest')
+                or record.get('kind') not in KINDS
                 or record.get('state') not in TERMINAL | {'queued', 'running'}):
             raise OwnershipError('job ownership receipt changed')
         process = record.get('process')
@@ -125,8 +126,8 @@ class Jobs:
             return self.reconcile(self.get(job_id))
 
     def start(self, kind, *, owner=None, input=None):
-        if kind not in ('start', 'driver_install', 'selftest'):
-            raise ValueError('kind must be start, driver_install, or selftest')
+        if kind not in KINDS:
+            raise ValueError('unknown detached job kind')
         payload = {} if input is None else input
         if not isinstance(payload, dict):
             raise ValueError('job input must be an object')
@@ -137,12 +138,20 @@ class Jobs:
             if set(payload) - {'config'}:
                 raise ValueError('unknown start job input field')
             Config.from_object(payload.get('config', {}))
+        elif kind == 'setup':
+            if set(payload) != {'config', 'review_id'} or not isinstance(payload['review_id'], str):
+                raise ValueError('Setup requires its reviewed plan')
+            if Config.from_object(payload['config']).kind != 'realm':
+                raise ValueError('Regular setup requires kind realm')
         elif kind == 'driver_install':
             if set(payload) - {'archive'}:
                 raise ValueError('unknown driver_install input field')
             if 'archive' in payload and (not isinstance(payload['archive'], str)
                     or not Path(payload['archive']).is_absolute() or '\0' in payload['archive']):
                 raise ValueError('archive must be an absolute NUL-free path')
+        elif kind in ('vm_setup', 'vm_driver', 'transfer'):
+            from .vm_jobs import validate_input
+            validate_input(self.home, kind, owner, payload)
         else:
             seconds = payload.get('seconds', 0)
             if (not finite_number(seconds) or not 0 <= seconds <= 3600
@@ -155,8 +164,8 @@ class Jobs:
             for record in records:
                 if record['state'] in TERMINAL:
                     continue
-                if (kind == 'driver_install' and record['kind'] == kind
-                        or kind == 'start' and record['kind'] == kind and record['owner'] == owner):
+                if (kind in ('setup', 'driver_install', 'vm_setup') and record['kind'] in ('setup', 'driver_install', 'vm_setup')
+                        or kind in ('start', 'vm_driver', 'transfer') and record['kind'] == kind and record['owner'] == owner):
                     raise BusyError('an operation of this kind is already active for this owner')
             if len(records) >= RECORD_LIMIT:
                 raise BusyError('job capacity reached')
@@ -217,6 +226,10 @@ class Jobs:
         def progress(value):
             with self.lock():
                 current = self.get(job_id)
+                if current['process'] != identity(os.getpid()):
+                    raise OwnershipError('job progress writer no longer owns this operation')
+                if current['state'] in TERMINAL:
+                    raise Cancelled()
                 current.update(progress=value, updated_at=time.time())
                 self.put(current)
 
@@ -224,7 +237,10 @@ class Jobs:
             nonlocal operation
             if prepared is not None:
                 operation = prepared
-                progress({'realm_id': prepared['id'], 'generation': prepared['generation']})
+                value = {'realm_id': prepared['id'], 'generation': prepared['generation']}
+                if 'compute_generation' in prepared:
+                    value['compute_generation'] = prepared['compute_generation']
+                progress(value)
 
         previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
         previous = signal.signal(signal.SIGTERM, cancelled)
@@ -248,13 +264,23 @@ class Jobs:
                     if payload.get('fail'):
                         raise RealmError('selftest requested failure')
                     result = {'completed': True}
+                elif record['kind'] in ('setup', 'vm_setup'):
+                    from .setup_worker import run
+                    result = run(self.home, record, progress)
                 elif record['kind'] == 'driver_install':
                     from .install_driver import install
                     from .diagnostics import driver_status
                     install(home=self.home, archive=payload.get('archive'), progress=progress)
                     result = driver_status(self.home)
+                elif record['kind'] in ('vm_setup', 'vm_driver', 'transfer'):
+                    from .vm_jobs import run
+                    result = run(self.home, record, progress)
                 else:
-                    from .manager import Manager
+                    from .config import Config
+                    if Config.from_object(payload.get('config', {})).kind == 'omarchy-vm':
+                        from .vm_manager import VmManager as Manager
+                    else:
+                        from .manager import Manager
                     manager = Manager(self.home, config=payload.get('config', {}))
                     result = dict(manager.start(record['owner'], before_start=before_start), owner=record['owner'])
                 terminal = {'state': 'succeeded', 'result': result}
@@ -263,10 +289,21 @@ class Jobs:
                 terminal = {'state': 'cancelled', 'code': 'cancelled', 'error': 'Operation cancelled'}
                 if operation is not None and manager is not None:
                     try:
-                        current = manager.record(operation['id'])
-                        if current['generation'] != operation['generation']:
-                            raise OwnershipError('cancelled startup incarnation changed')
-                        manager.stop(current['id'])
+                        if 'compute_generation' in operation:
+                            # VM workspace generations survive resume. Compare
+                            # and retire compute under one registry lock so an
+                            # old cancellation cannot stop a newer incarnation.
+                            with manager.registry.lock():
+                                current = manager.registry.get(operation['id'])
+                                if any(current.get(key) != operation.get(key) for key in
+                                       ('id', 'session_id', 'generation', 'compute_generation')):
+                                    raise OwnershipError('cancelled startup incarnation changed')
+                                manager._stop_locked(current)
+                        else:
+                            current = manager.record(operation['id'])
+                            if current['generation'] != operation['generation']:
+                                raise OwnershipError('cancelled startup incarnation changed')
+                            manager.stop(current['id'])
                     except Exception as exc:
                         terminal['error'] += '; startup cleanup failed: ' + str(exc)
             except Exception as exc:
@@ -277,6 +314,8 @@ class Jobs:
                 current = self.get(job_id)
                 if current['process'] != identity(os.getpid()):
                     raise OwnershipError('job runner receipt changed')
+                if current['state'] in TERMINAL:
+                    return current
                 current.update(**terminal, updated_at=time.time())
                 self.put(current)
             return current

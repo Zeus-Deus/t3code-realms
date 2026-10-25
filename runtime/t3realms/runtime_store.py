@@ -175,6 +175,13 @@ class RuntimeStore:
                             keep = True
                     if keep:
                         protected.add(path)
+        if (self.home / 'realms').exists():
+            from .vm_manager import VmRegistry
+            registry = VmRegistry(self.home)
+            with registry.lock(blocking=False):
+                for record in registry.records():
+                    if record.get('runtime_copy') and (record['status'] not in ('stopped', 'recovery-required', 'deleting') or record.get('cleanup_required') is not False):
+                        protected.add(self.reference(record['runtime_copy']))
         if (self.home / 'jobs').exists():
             jobs = Jobs(self.home)
             with jobs.lock(blocking=False):

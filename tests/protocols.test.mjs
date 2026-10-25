@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { getEventListeners } from "node:events";
 import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import * as net from "node:net";
@@ -163,4 +164,30 @@ test("takeover input completes an RFB 3.8 handshake and sends pointer and key ev
     server.close();
   }
   await assert.rejects(connectRfb(path.join(directory, "missing.sock")), (error) => error.code === "not_running");
+});
+
+test("GUI client never sends an already-cancelled input and releases abort listeners", async (t) => {
+  const directory = await temp(); t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const script = path.join(directory, "cancel-server.mjs");
+  await fs.writeFile(script, `import * as readline from "node:readline";
+let inputs=0;
+readline.createInterface({input:process.stdin}).on("line",line=>{
+ const message=JSON.parse(line);
+ if(message.id===undefined)return;
+ if(message.method==="tools/call")inputs++;
+ process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:message.id,result:message.method==="initialize"?{capabilities:{}}:{content:[{type:"text",text:String(inputs)}]}})+"\\n");
+});`);
+  const session = createCuaSession({ command: process.execPath, args: [script], env: { PATH: process.env.PATH } }); t.after(() => session.close());
+  await session.ready;
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(session.call("click", {}, { signal: controller.signal }), (error) => error.code === "cancelled");
+  assert.equal((await session.call("get_screen_size", {})).content[0].text, "1", "only the fresh diagnostic was sent");
+  const live = new AbortController();
+  for (let index = 0; index < 12; index++) await session.call("get_screen_size", {}, { signal: live.signal });
+  assert.equal(getEventListeners(live.signal, "abort").length, 0);
+});
+
+test("host guard keeps quoted shell operators as argument data", () => {
+  assert.equal(hostEscape("printf '%s\\n' ';' A=1 DISPLAY=:0"), undefined);
+  assert.match(hostEscape("printf hello # comment\nDISPLAY=:0 xdotool key Return") ?? "", /Blocked/);
 });

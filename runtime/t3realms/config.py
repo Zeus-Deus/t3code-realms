@@ -1,7 +1,7 @@
 # Adapted from Hermes Realms 0.2.0 (MIT, Copyright (c) 2026 Zeus-Deus)
 """Caller-supplied configuration and an explicit, private state home."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 import os
 from pathlib import Path
@@ -67,6 +67,8 @@ def driver_path(home):
 
 @dataclass(frozen=True)
 class Config:
+    kind: str = 'realm'
+    vm: 'VmConfig' = field(default_factory=lambda: VmConfig())
     size: str = '1920x1080'
     idle_ttl: float = 1800
     renderer: str = 'gles2'
@@ -74,6 +76,15 @@ class Config:
     cursor_theme: str = 'cua.default'
 
     def __post_init__(self):
+        if self.kind not in ("realm", "omarchy-vm"):
+            raise ValueError("kind must be realm or omarchy-vm")
+        if isinstance(self.vm, dict):
+            try:
+                object.__setattr__(self, "vm", VmConfig(**self.vm))
+            except TypeError as exc:
+                raise ValueError("unknown VM configuration field") from exc
+        if not isinstance(self.vm, VmConfig):
+            raise ValueError("vm must be an object")
         parse_size(self.size)
         if self.renderer not in ('gles2', 'pixman'):
             raise ValueError('renderer must be gles2 or pixman')
@@ -108,3 +119,34 @@ def validate_owner(owner):
     if not isinstance(owner, str) or not 1 <= len(owner) <= 256 or '\0' in owner:
         raise ValueError('owner must contain 1 to 256 NUL-free characters')
     return owner
+
+
+KINDS = ('realm', 'omarchy-vm')
+
+
+def vm_data_path(home):
+    return effective_home(home) / 'vm'
+
+
+@dataclass(frozen=True)
+class VmConfig:
+    release: str = '4.0.4'
+    memory: int = 3072
+    cpus: int = 2
+    disk_size: str = '40G'
+    network: bool = True
+    boot_timeout: int = 180
+    workspace_retention_days: int = 14
+
+    def __post_init__(self):
+        if not isinstance(self.release, str) or not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', self.release):
+            raise ValueError('vm.release must be a literal stable version such as 4.0.4')
+        for name, low, high in (('memory', 1024, 131072), ('cpus', 1, 64), ('boot_timeout', 10, 900), ('workspace_retention_days', 0, 36500)):
+            value = getattr(self, name)
+            if type(value) is not int or not low <= value <= high:
+                raise ValueError(f'vm.{name} must be an integer from {low} to {high}')
+        if not isinstance(self.network, bool):
+            raise ValueError('vm.network must be a JSON boolean')
+        if (not isinstance(self.disk_size, str) or not re.fullmatch(r'[1-9][0-9]{0,3}G', self.disk_size)
+                or not 16 <= int(self.disk_size[:-1]) <= 2048):
+            raise ValueError('vm.disk_size must be 16G to 2048G')

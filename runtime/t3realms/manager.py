@@ -68,71 +68,85 @@ class Manager:
 
     def list(self, owner=None):
         with self.registry.lock():
-            self._reconcile_locked()
-            return [dict(record, owner=record['session_id'], error=record.get('error', record.get('cleanup_error')),
+            errors = self._reconcile_locked(owner)
+            return [dict(record, owner=record['session_id'],
+                         error=errors.get(record['id'], record.get('error', record.get('cleanup_error'))),
+                         cleanup_required=record['id'] in errors or record['status'] == 'cleanup_failed',
                          cleanup_note=record.get('cleanup_note'))
                     for record in self.registry.records()
                     if owner is None or record['session_id'] == owner]
 
-    def _reconcile_locked(self):
+    def _reconcile_locked(self, owner=None):
+        errors = {}
         for record in self.registry.records():
-            if record["status"] == "starting":
-                owner = Path(record["runtime_dir"]) / "owner.json"
-                if owner.exists():
-                    candidate = private_json(owner)
-                    if any(
-                        candidate.get(key) != record.get(key)
-                        for key in (
-                            "id",
-                            "generation",
-                            "uid",
-                            "home",
-                            "session_id",
-                            "runtime_dir",
-                            "runtime_copy",
-                            "python_executable",
-                            "scope",
-                            "guardian_unit",
-                        )
-                    ):
-                        raise OwnershipError("startup ownership receipt changed")
-                    if alive(candidate.get("supervisor")):
-                        validate_live(candidate)
-                        guardian = scope_info(record["guardian_unit"])
-                        if (
-                            guardian["ActiveState"] != "active"
-                            or guardian.get("InvocationID")
-                            != candidate.get("guardian_invocation_id")
-                            or Path(f"/proc/{candidate['supervisor']['pid']}/cgroup")
-                            .read_text(encoding="utf-8")
-                            .strip()
-                            != "0::" + guardian.get("ControlGroup", "")
-                        ):
-                            raise OwnershipError("startup guardian invocation changed")
-                        self.registry.put(candidate)
-                        continue
-                # A launcher can outlive the caller. Reserve its owner through
-                # the startup deadline; absence must be observed on both units.
-                if time.time() - record["created_at"] < 35:
-                    continue
-                guardian = scope_info(record["guardian_unit"])
-                scope = scope_info(record["scope"])
+            if owner is not None and record['session_id'] != owner:
+                continue
+            try:
+                self._reconcile_record_locked(record)
+            except (RealmError, OSError, subprocess.SubprocessError) as exc:
+                # Inventory must keep targeted Stop reachable even when another
+                # generation cannot be retired. Never infer successful teardown.
+                errors[record['id']] = str(exc)
+        return errors
+
+    def _reconcile_record_locked(self, record):
+        if record["status"] == "starting":
+            owner = Path(record["runtime_dir"]) / "owner.json"
+            if owner.exists():
+                candidate = private_json(owner)
                 if any(
-                    info["ActiveState"] not in ("inactive", "failed")
-                    for info in (guardian, scope)
+                    candidate.get(key) != record.get(key)
+                    for key in (
+                        "id",
+                        "generation",
+                        "uid",
+                        "home",
+                        "session_id",
+                        "runtime_dir",
+                        "runtime_copy",
+                        "python_executable",
+                        "scope",
+                        "guardian_unit",
+                    )
                 ):
-                    continue
-                stop_scope(record)
-                remove_runtime(self.registry, record)
-            elif record["status"] == "cleanup_failed" or (
-                record["status"] in ("running", "stopping")
-                and (
-                    not alive(record.get("supervisor"))
-                    or not Path(record["runtime_dir"]).exists()
-                )
+                    raise OwnershipError("startup ownership receipt changed")
+                if alive(candidate.get("supervisor")):
+                    validate_live(candidate)
+                    guardian = scope_info(record["guardian_unit"])
+                    if (
+                        guardian["ActiveState"] != "active"
+                        or guardian.get("InvocationID")
+                        != candidate.get("guardian_invocation_id")
+                        or Path(f"/proc/{candidate['supervisor']['pid']}/cgroup")
+                        .read_text(encoding="utf-8")
+                        .strip()
+                        != "0::" + guardian.get("ControlGroup", "")
+                    ):
+                        raise OwnershipError("startup guardian invocation changed")
+                    self.registry.put(candidate)
+                    return
+            # A launcher can outlive the caller. Reserve its owner through
+            # the startup deadline; absence must be observed on both units.
+            if time.time() - record["created_at"] < 35:
+                return
+            guardian = scope_info(record["guardian_unit"])
+            scope = scope_info(record["scope"])
+            if any(
+                info["ActiveState"] not in ("inactive", "failed")
+                for info in (guardian, scope)
             ):
-                stop_scope(record)
-                remove_runtime(self.registry, record)
+                return
+            stop_scope(record)
+            remove_runtime(self.registry, record)
+        elif record["status"] == "cleanup_failed" or (
+            record["status"] in ("running", "stopping")
+            and (
+                not alive(record.get("supervisor"))
+                or not Path(record["runtime_dir"]).exists()
+            )
+        ):
+            stop_scope(record)
+            remove_runtime(self.registry, record)
 
     def start(self, session_id, *, before_start=None):
         from .runtime_store import pinned_runtime
@@ -148,7 +162,7 @@ class Manager:
             for existing in self.registry.records():
                 if existing["session_id"] == session_id:
                     require_retained_workspace(existing)
-            self._reconcile_locked()
+            self._reconcile_locked(session_id)
             retained = None
             for existing in self.registry.records():
                 if existing["session_id"] == session_id and existing["status"] == "stopped":
@@ -443,6 +457,15 @@ class Manager:
         from .windows import count_windows
         self.env(realm_id, renew=False)
         return {'count': count_windows(self.record(realm_id))}
+
+    def stop_driver(self, realm_id, incarnation):
+        record = self.record(realm_id)
+        if record['generation'] != incarnation:
+            raise OwnershipError('Realm driver compute incarnation changed')
+        if record['status'] == 'running':
+            validate_live(record)
+        from .driver_lifetime import stop_driver
+        return stop_driver(self, record)
 
     def job(self, realm_id, job_id):
         return self._rpc(realm_id, renew=True, op='job', job_id=job_id)

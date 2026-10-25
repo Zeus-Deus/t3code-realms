@@ -182,4 +182,11 @@ def driver_main(home, realm_id, binary, generation):
         if '--cursor-theme' not in args:
             args += ['--cursor-theme', manager.config.cursor_theme]
     command = sandbox_command(record, binary, args)
+    if args and args[0] in ('mcp', 'serve'):
+        from .driver_lifetime import run_contained
+        endpoint = Path(args[args.index('--socket') + 1]) if args[0] == 'serve' else None
+        result = run_contained(manager, record, command, env, endpoint=endpoint)
+        if result:
+            raise SystemExit(result)
+        return
     os.execve(command[0], command, env)

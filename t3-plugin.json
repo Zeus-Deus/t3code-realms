@@ -1,34 +1,42 @@
 {
   "id": "zeus-deus.t3code-realms",
   "name": "Realms",
-  "description": "Private Linux test desktops for agents, one per thread. The agent opens, clicks and screenshots apps inside the Realm, never on your screen, pointer or clipboard. Its ordinary work stays in its normal shell. GUI separation, not a hostile-code sandbox.",
+  "description": "Private Linux desktops for agents, shared by a thread and its verified subagents: a lightweight labwc Realm or an Omarchy QEMU/KVM guest with its own kernel and disk. Explicit file copies, private capture and input; ordinary coding stays on the host. Optional test tools only; ordinary provider shell/files/other tools are unaffected. There is nothing to exit.",
   "version": "0.1.0",
   "apiVersion": 1,
   "entry": "plugin.mjs",
   "capabilities": [
     "storage",
     "settings",
-    "ui"
+    "ui",
+    "threads.send"
   ],
   "actions": [
     {
       "id": "realm",
       "title": "Realm: manage this thread's private desktop",
-      "description": "Manage this thread's optional private Linux test desktop (labwc/Wayland). Input: {action: on|off|status|size|stop|repair|shot|watch, size?: \"WIDTHxHEIGHT\"}. Your ordinary shell, files and cwd are unchanged; there is nothing to exit after testing. on starts or reuses the Realm (regular kind only). off stops your use but keeps the desktop and any viewer. stop ends compute and keeps the workspace; save app work first. status works without the GUI driver. repair resets only the GUI-driver connection; take a fresh capture after it and never replay uncertain input. shot returns a screenshot image of the Realm. Never fall back to the physical desktop. If a person has taken control, wait for them to hand it back. Setup requires a person's approval in T3 Code.",
+      "description": "Manage this thread's private desktop. Input: {action: on|off|status|size|stop|repair|shot|watch, kind?: \"realm\"|\"omarchy-vm\", size?: \"WIDTHxHEIGHT\"}. on honors a named kind, otherwise reuses the thread preference; switching stops current compute and keeps both workspaces. Omarchy VM setup requires a person's reviewed approval (signed ISO ~5 GiB, plugin-local base and driver). off revokes agent use; stop ends compute and keeps data. VM stopped disks expire after the configured retention (14 days, 0 keeps). repair resets only the GUI connection; take a fresh capture and never replay uncertain input. shot returns an image. Status includes selected kind. Never substitute the physical desktop. A person's Off and human takeover exclude agent use. Verified subagents share the parent's Realm, preferences, control and jobs; forks have their own. Setup-required requests may resume once after a person completes setup, if threads.send is granted; reevaluate instead of replaying an old operation. On Arch with pacman, setup may include an exact reviewed package command requesting native Polkit authorization. Agents cannot approve or run setup. Realms are optional test tools. Realm actions only: your ordinary shell, files, git, research and other tools are unaffected; continue ordinary work. Nothing is redirected or disabled. There is nothing to exit; off is not needed for ordinary work. For a shared Realm omit thread overrides or keep your own caller context; verified ownership selects the parent automatically. Coordinate parallel subagents: they share one screen and lifecycle changes.",
       "placements": [],
       "agentCallable": true
     },
     {
       "id": "realm-terminal",
       "title": "Realm: run a command inside this thread's desktop",
-      "description": "Run a shell command inside this thread's Realm, so GUI apps open on its private display. Input: {command: string, cwd?: absolute path, background?: boolean, timeoutSeconds?: number up to 20} or {jobId, signal?: INT|TERM|KILL|HUP} to poll or signal a job. Use background: true for GUI applications and poll with jobId. The Realm shares this machine's files and network; only the display, input, clipboard and session buses are private. Recognisable attempts to point display or bus variables at the host are refused; this is a guardrail, not containment, so never try to reach the host desktop from a Realm. Use your normal shell for builds and git; use this only for what must run on the private desktop.",
+      "description": "Run a command in this thread's selected Realm. Input: {command, cwd?: absolute target path, background?: boolean, timeoutSeconds?: number up to 20} or {jobId, signal?: INT|TERM|KILL|HUP}. Use background for GUI apps. Regular Realms share host files/network but use a private display and buses. Omarchy VM commands run as the guest desktop user over generation-pinned SSH, with guest environment and no host credentials, mounts, agent or X11 forwarding. Host paths are not guest paths; use realm-files for explicit copies. Poll jobs by jobId. Physical desktop access is refused; never work around human control. Ordinary builds/git remain in the normal host shell. Verified subagents share the parent's Realm, preferences, control and jobs; forks have their own. Setup-required requests may resume once after a person completes setup, if threads.send is granted; reevaluate instead of replaying an old operation. Realms are optional test tools. Realm actions only: your ordinary shell, files, git, research and other tools are unaffected; continue ordinary work. Nothing is redirected or disabled. There is nothing to exit; off is not needed for ordinary work. For a shared Realm omit thread overrides or keep your own caller context; verified ownership selects the parent automatically. Coordinate parallel subagents: they share one screen and lifecycle changes.",
       "placements": [],
       "agentCallable": true
     },
     {
       "id": "realm-computer",
       "title": "Realm: see and control apps in this thread's desktop",
-      "description": "Computer use inside this thread's Realm through the pinned GUI driver. Input: {tool, arguments?}. tool \"list\" shows the available tools, \"describe:<name>\" a tool's arguments. get_desktop_state returns a screenshot image; list_apps and get_window_state (accessibility tree with element tokens) find apps; list_windows only sees X11 windows, so native Wayland apps may be missing there; click, type_text, press_key, hotkey, scroll and drag act on those apps. Verify the app's actual state after input; a successful response alone is not proof. Never acts on the physical desktop.",
+      "description": "Computer use inside this thread's Realm through the pinned GUI driver. Input: {tool, arguments?}. tool \"list\" shows the available tools, \"describe:<name>\" a tool's arguments. get_desktop_state returns a screenshot image; list_apps and get_window_state (accessibility tree with element tokens) find apps; list_windows only sees X11 windows, so native Wayland apps may be missing there; click, type_text, press_key, hotkey, scroll and drag act on those apps. Verify the app's actual state after input; a successful response alone is not proof. Never acts on the physical desktop. For omarchy-vm the driver runs inside the guest over pinned SSH. Initial staging is a detached job and can return starting; retry after status, without replaying input. Verified subagents share the parent's Realm, preferences, control and jobs; forks have their own. Setup-required requests may resume once after a person completes setup, if threads.send is granted; reevaluate instead of replaying an old operation. Realms are optional test tools. Realm actions only: your ordinary shell, files, git, research and other tools are unaffected; continue ordinary work. Nothing is redirected or disabled. There is nothing to exit; off is not needed for ordinary work. For a shared Realm omit thread overrides or keep your own caller context; verified ownership selects the parent automatically. Coordinate parallel subagents: they share one screen and lifecycle changes.",
+      "placements": [],
+      "agentCallable": true
+    },
+    {
+      "id": "realm-files",
+      "title": "Realm: copy selected files to or from the VM",
+      "description": "Explicit Omarchy VM file copies. {action:\"push\", source: absolute host path, destination?: absolute guest path} or {action:\"pull\", source: absolute guest path, destination: required absolute host path}. Omitted push destination is the guest user's home plus source basename. Paths are literal: no globbing, implicit project sync or host mounts. Directory push selects the exact guest directory; pull into an existing directory treats it as a container. Different existing bytes/types/link targets are conflicts and never overwritten; identical entries stay, additions merge. Not crash-atomic. Copy changed work to a fresh location and inspect it. Returns {jobId}; poll {action:\"status\",jobId} or cancel {action:\"cancel\",jobId}. Successful job.result.destination is the final destination. Jobs belong to this verified owner thread and its subagents; Off and human control apply. Verified subagents share the parent's Realm, preferences, control and jobs; forks have their own. Setup-required requests may resume once after a person completes setup, if threads.send is granted; reevaluate instead of replaying an old operation. Realms are optional test tools. Realm actions only: your ordinary shell, files, git, research and other tools are unaffected; continue ordinary work. Nothing is redirected or disabled. There is nothing to exit; off is not needed for ordinary work. For a shared Realm omit thread overrides or keep your own caller context; verified ownership selects the parent automatically. Coordinate parallel subagents: they share one screen and lifecycle changes.",
       "placements": [],
       "agentCallable": true
     },
@@ -59,7 +67,8 @@
     {
       "id": "realm",
       "title": "Realm",
-      "viewId": "realm"
+      "viewId": "realm",
+      "icon": "monitor"
     }
   ],
   "settings": [
@@ -90,6 +99,48 @@
       "description": "Python 3.11 or newer on the server, used for the Realm runtime.",
       "type": "string",
       "default": "python3"
+    },
+    {
+      "key": "vmMemory",
+      "label": "VM memory (MiB)",
+      "description": "Guest RAM for new Omarchy VM workspaces (1024–131072). Existing disks retain their launch specification.",
+      "type": "number",
+      "default": 3072
+    },
+    {
+      "key": "vmCPUs",
+      "label": "VM virtual CPUs",
+      "description": "Virtual CPUs for new Omarchy VM workspaces (1–64).",
+      "type": "number",
+      "default": 2
+    },
+    {
+      "key": "vmDiskSize",
+      "label": "VM virtual disk capacity",
+      "description": "Capacity for preparing the plugin-local base (16G–2048G). Sparse overlays grow with guest writes; changing this does not resize an existing base.",
+      "type": "string",
+      "default": "40G"
+    },
+    {
+      "key": "vmNetwork",
+      "label": "VM unrestricted networking",
+      "description": "Enabled uses QEMU user networking, including host loopback services through 10.0.2.2. Disabled selects restrict=on and keeps the loopback SSH forward. Applies to new workspaces.",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "vmRetentionDays",
+      "label": "Stopped VM disk retention (days)",
+      "description": "Delete verified stopped VM workspaces unused this many days when listing/starting. 0 keeps indefinitely. Running guests, unknown retirement, open files, shared bases and ISOs are preserved.",
+      "type": "number",
+      "default": 14
+    },
+    {
+      "key": "vmRelease",
+      "label": "Omarchy base release",
+      "description": "Exact stable release for a new reviewed base install. The signed ISO is downloaded only after setup consent. Existing bases/workspaces are preserved.",
+      "type": "string",
+      "default": "4.0.4"
     }
   ]
 }

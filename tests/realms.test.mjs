@@ -11,23 +11,30 @@ const client = (threadId) => ({ caller: { kind: "client" }, ...(threadId ? { con
 
 /** An in-memory stand-in for the native runtime's JSON CLI contract. */
 function fakeRuntime({ ready = true } = {}) {
-  const state = { ready, records: new Map(), jobs: new Map(), calls: [], next: 1, sessions: [] };
+  const state = { ready, records: new Map(), jobs: new Map(), calls: [], next: 1, sessions: [], serves: 0, daemonJobs: new Map() };
   const record = (owner) => [...state.records.values()].filter((entry) => entry.owner === owner);
   const call = async (command, input = {}) => {
     state.calls.push([command, input]);
     switch (command) {
       case "doctor":
         return { ready: state.ready, missing: state.ready ? [] : ["labwc", "verified cua-driver"], message: state.ready ? "Ready" : "Install labwc", driver: { verified: state.ready } };
+      case "setup_plan": {
+        if (input.config.kind === "omarchy-vm") return { kind: "omarchy-vm", ready: true, missing: [], reviewId: "vm-plan", driver: { installed: true } };
+        return { kind: "realm", ready: state.ready, missing: state.ready ? [] : ["labwc"],
+          blockers: state.ready ? [] : ["labwc"], packages: [], reviewId: state.ready ? "ready-plan" : "blocked-plan", driver: { installed: state.ready } };
+      }
+      case "stop":
+        state.records.get(input.id).status = "stopped"; return true;
       case "list":
         return [...state.records.values()].filter((entry) => !input.owner || entry.owner === input.owner);
       case "job_list":
         return [...state.jobs.values()].filter((job) => !input.owner || job.owner === input.owner);
       case "job_start": {
         const job_id = `job-${state.next++}`;
-        state.jobs.set(job_id, { job_id, kind: input.kind, owner: input.owner, state: "succeeded" });
+        state.jobs.set(job_id, { job_id, kind: input.kind, owner: input.owner, state: "succeeded", input: input.input });
         if (input.kind === "start") {
           const id = `r-${String(state.next++).padStart(24, "0")}`;
-          state.records.set(id, { id, owner: input.owner, status: "running", generation: "g1", size: input.input.config.size });
+          state.records.set(id, { id, owner: input.owner, status: "running", generation: "g1", kind: input.input.config.kind ?? "realm", size: input.input.config.size });
         }
         return { job_id };
       }
@@ -43,13 +50,24 @@ function fakeRuntime({ ready = true } = {}) {
       case "stop_owner":
         for (const entry of record(input.owner)) entry.status = "stopped";
         return true;
+      case "driver_stop":
+        for (const [jobId, job] of state.daemonJobs) if (job.id === input.id) {
+          job.returncode = 0;
+          state.calls.push(["signal", { id: input.id, owner: input.owner, job_id: jobId, signal: 15 }]);
+        }
+        return { retired: true };
       case "exec":
-        if (input.argv[1] === "serve") return { job_id: "serve-1", pid: 43 };
+        if (input.argv[1] === "serve") {
+          const job_id = `serve-${++state.serves}`;
+          state.daemonJobs.set(job_id, { id: input.id, returncode: null });
+          return { job_id, pid: 43 };
+        }
         return { job_id: "cmd-1", pid: 42 };
       case "job":
-        if (input.job_id === "serve-1") return { job_id: "serve-1", returncode: null };
+        if (state.daemonJobs.has(input.job_id)) return { job_id: input.job_id, returncode: state.daemonJobs.get(input.job_id).returncode };
         return { job_id: input.job_id, returncode: 0, stdout: "hi\n", stderr: "" };
       case "signal":
+        if (state.daemonJobs.has(input.job_id)) state.daemonJobs.get(input.job_id).returncode = 0;
         return true;
       case "shot":
         return { path: "assets/shot-1.jpg", mimeType: "image/jpeg", width: 10, height: 10, sha256: "x" };
@@ -94,6 +112,7 @@ async function setup(options = {}) {
     ...(now ? { now } : {}),
     runtime,
     storage,
+    sendThread: options.sendThread,
     settings: { get: async () => null },
     dataDirectory,
     connectCua: () => {
@@ -255,9 +274,9 @@ test("commands that point display or bus variables at the host are refused befor
   assert.equal(exec.owner, "thread:t1");
 });
 
-test("unsupported kinds and the Omarchy VM are explicit, not silently mapped", async () => {
+test("unknown kinds are refused rather than silently mapped", async () => {
   const { realms } = await setup();
-  await rejects(realms.on(principal(agent("t1")), { kind: "omarchy-vm" }), "unsupported");
+  await rejects(realms.on(principal(agent("t1")), { kind: "unknown" }), "invalid_input");
 });
 
 test("the thread status stays quiet until a thread uses a Realm and never lies about control", async () => {
@@ -265,29 +284,29 @@ test("the thread status stays quiet until a thread uses a Realm and never lies a
   const person = principal(client("t1"));
   assert.equal(await realms.badge(person), null);
   await realms.on(principal(agent("t1")), {});
-  assert.deepEqual((await realms.badge(person)).label, "Realm live");
+  assert.deepEqual((await realms.badge(person)).label, "Live");
   await realms.takeControl(person);
   assert.equal((await realms.badge(person)).tone, "warning");
   await realms.handBack(person);
   await realms.off(person);
-  assert.equal((await realms.badge(person)).label, "Realm live · agent off");
+  assert.equal((await realms.badge(person)).label, "Live · agent off");
   await realms.stop(person);
-  assert.equal((await realms.badge(person)).label, "Realm off");
+  assert.equal((await realms.badge(person)).label, "Off");
 });
 
 test("setup approval starts the pinned driver install when only the driver is missing", async () => {
   const { realms, runtime } = await setup({ ready: false });
   const original = runtime.call;
   runtime.call = async (command, input) =>
-    command === "doctor"
-      ? { ready: false, missing: ["verified cua-driver"], message: "Install driver", driver: { verified: false } }
+    command === "setup_plan"
+      ? { ready: false, missing: [], blockers: [], packages: [], reviewId: "driver-plan", driver: { installed: false } }
       : original(command, input);
   const person = principal(client());
   const review = (await realms.setupReview(person)).data;
   assert.deepEqual(review.missing, []);
   const started = await realms.setupStart(person, { reviewId: review.reviewId });
   assert.ok(started.data.jobId);
-  assert.ok(runtime.state.calls.some(([command, input]) => command === "job_start" && input.kind === "driver_install"));
+  assert.ok(runtime.state.calls.some(([command, input]) => command === "job_start" && input.kind === "setup"));
 });
 
 test("review r1: an agent cannot overwrite a person's off and then turn the Realm back on", async () => {
@@ -466,4 +485,687 @@ test("storage keys satisfy the host contract for any thread id, including long o
   assert.equal((await realms.status(principal(client(otherId)))).mode, "unset");
   assert.ok(storage.values.size > 0);
   for (const key of storage.values.keys()) assert.match(key, HOST_STORAGE_KEY);
+});
+
+test("VM kind is persisted, routed to setup/start, and survives off", async (t) => {
+  const s = await setup(); t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  const who = { kind: "user", threadId: "vm-owner" };
+  const state = await s.realms.on(who, { kind: "omarchy-vm" });
+  assert.equal(state.kind, "omarchy-vm");
+  assert.match(s.realms.summary(state), /omarchy realm/);
+  assert.equal(s.runtime.state.calls.find(([cmd]) => cmd === "job_start")[1].input.config.kind, "omarchy-vm");
+  assert.equal((await s.realms.off(who)).kind, "omarchy-vm");
+});
+
+test("file transfers are owned detached jobs, require an explicit pull destination and exclude human control", async (t) => {
+  const s = await setup(); t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  const who = { kind: "agent", threadId: "vm-files" };
+  await s.realms.on(who, { kind: "omarchy-vm" });
+  await assert.rejects(s.realms.files(who, { action: "pull", source: "/guest/project" }), /destination/i);
+  const result = await s.realms.files(who, { action: "pull", source: "/guest/project", destination: "/host/export" });
+  assert.ok(result.data.jobId);
+  const call = s.runtime.state.calls.find(([cmd, value]) => cmd === "job_start" && value.kind === "transfer");
+  assert.equal(call[1].owner, "thread:vm-files");
+  assert.equal(call[1].input.destination, "/host/export");
+  await s.realms.takeControl({ kind: "user", threadId: who.threadId });
+  await assert.rejects(s.realms.files(who, { action: "push", source: "/host/project" }), (error) => error.code === "human_control");
+});
+
+test("VM setup review binds resources and exact selected kind", async (t) => {
+  const s = await setup(); t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  const who = { kind: "user", threadId: "setup-vm" };
+  const review = await s.realms.setupReview(who, { kind: "omarchy-vm" });
+  assert.equal(review.data.kind, "omarchy-vm");
+  await assert.rejects(s.realms.setupStart(who, { kind: "realm", reviewId: review.data.reviewId }), (e) => e.code === "changed");
+});
+
+test("switching kind stops compute and keeps each kind's workspace", async (t) => {
+  const s = await setup(); t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  const who = { kind: "user", threadId: "switch" };
+  await s.realms.on(who, {});
+  const regular = [...s.runtime.state.records.values()][0];
+  await s.realms.on(who, { kind: "omarchy-vm" });
+  assert.equal(regular.status, "stopped");
+  assert.equal(s.runtime.state.records.size, 2);
+  const state = await s.realms.status(who);
+  assert.equal(state.kind, "omarchy-vm");
+  assert.equal(state.realm.kind, "omarchy-vm");
+});
+
+test("a named VM cannot bypass a person's off or human control", async (t) => {
+  const s = await setup(); t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  const person = { kind: "user", threadId: "vm-auth" }, agentWho = { ...person, kind: "agent" };
+  await s.realms.on(person, {});
+  await s.realms.takeControl(person);
+  await assert.rejects(s.realms.on(agentWho, { kind: "omarchy-vm" }), (e) => e.code === "human_control");
+  await s.realms.handBack(person);
+  await s.realms.off(person);
+  await assert.rejects(s.realms.on(agentWho, { kind: "omarchy-vm" }), (e) => e.code === "disabled");
+  await assert.rejects(s.realms.setupReview(agentWho, { kind: "omarchy-vm" }), (e) => e.code === "ownership");
+});
+
+test("transfer job polling refuses another thread or a setup job", async (t) => {
+  const s = await setup(); t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  const who = { kind: "agent", threadId: "transfer-owner" };
+  await s.realms.on(who, { kind: "omarchy-vm" });
+  s.runtime.state.jobs.set("other", { job_id: "other", kind: "transfer", owner: "thread:other", state: "running" });
+  await assert.rejects(s.realms.files(who, { action: "status", jobId: "other" }), (e) => e.code === "ownership");
+  s.runtime.state.jobs.set("setup", { job_id: "setup", kind: "vm_setup", owner: "thread:transfer-owner", state: "running" });
+  await assert.rejects(s.realms.files(who, { action: "cancel", jobId: "setup" }), (e) => e.code === "invalid_input");
+});
+
+test("VM setup starts only the exact approved plan as a detached setup job", async (t) => {
+  const s = await setup(); t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  const baseCall = s.runtime.call;
+  s.runtime.call = async (command, input, options) => command === "setup_plan"
+    ? { kind: "omarchy-vm", reviewId: "exact-vm-plan", ready: false, missing: [], driver: { installed: false } }
+    : baseCall(command, input, options);
+  const who = { kind: "user", threadId: "vm-setup-job" };
+  await assert.rejects(s.realms.setupStart(who, { kind: "omarchy-vm", reviewId: "stale" }), (e) => e.code === "changed");
+  const result = await s.realms.setupStart(who, { kind: "omarchy-vm", reviewId: "exact-vm-plan" });
+  const call = s.runtime.state.calls.find(([cmd, input]) => cmd === "job_start" && input.kind === "vm_setup");
+  assert.ok(result.data.jobId); assert.equal(call[1].input.review_id, "exact-vm-plan");
+  assert.equal(call[1].input.config.kind, "omarchy-vm");
+});
+
+test("the management list includes both kinds and stays inside the result budget", async (t) => {
+  const s = await setup(); t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  for (let i = 0; i < 150; i++) s.runtime.state.records.set(`v-${i}`, { id: `v-${i}`, owner: `thread:${i}`, kind: i % 2 ? "realm" : "omarchy-vm", status: "recovery-required", generation: `g-${i}`, recovery_reason: "x".repeat(5000) });
+  const result = await s.realms.list({ kind: "user" });
+  assert.ok(Buffer.byteLength(JSON.stringify(result)) < 128000);
+  assert.equal(result.data.total, 150); assert.ok(result.data.nextOffset > 0);
+  assert.ok(result.data.realms.some((r) => r.kind === "omarchy-vm" && r.needsRecovery));
+  const second = await s.realms.list({ kind: "user" }, { offset: result.data.nextOffset });
+  assert.notEqual(result.data.realms[0].id, second.data.realms[0].id);
+});
+
+test("VM repair confirms driver retirement before a fresh connection can start", async (t) => {
+  const s = await setup(); t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  const who = { kind: "agent", threadId: "vm-driver-retire" };
+  await s.realms.on(who, { kind: "omarchy-vm" });
+  await s.realms.computer(who, { tool: "list" });
+  const call = s.runtime.call;
+  let stopping = false, retired = false;
+  let resolveSignal, resolveExit;
+  const signalled = new Promise((r) => { resolveSignal = r; });
+  const exit = new Promise((r) => { resolveExit = r; });
+  s.runtime.call = async (command, input, opts) => {
+    if (command === "signal") { stopping = true; resolveSignal(); }
+    if (command === "exec" && stopping && input.argv[1] === "serve") assert.ok(retired, "old VM driver must be confirmed retired before starting another");
+    if (command === "job" && stopping && input.job_id === "serve-1") {
+      await exit; retired = true;
+      return { job_id: "serve-1", returncode: 0 };
+    }
+    return call(command, input, opts);
+  };
+  const repair = s.realms.repair(who);
+  await signalled;
+  const before = s.runtime.state.sessions.length;
+  const fresh = s.realms.computer(who, { tool: "list" });
+  // Both operations must cross the same exit milestone before a new daemon/session.
+  resolveExit();
+  await repair; await fresh;
+  assert.equal(s.runtime.state.sessions.length, before + 1);
+  assert.ok(s.runtime.state.sessions.slice(0, before).every((session) => session.closed));
+});
+
+
+const childAgent = () => principal({ caller: { kind: "agent", threadId: "child", subagentOf: "parent" }, context: { threadId: "child" } });
+const childClient = () => principal({ caller: { kind: "client" }, context: { threadId: "child", subagentOf: "parent" } });
+
+test("verified subagents share ownership but cannot forge the target or lineage", () => {
+  assert.equal(childAgent().threadId, "parent");
+  assert.equal(childClient().threadId, "parent");
+  assert.equal(principal(agent("child"), { subagentOf: "parent" }).threadId, "child");
+  assert.equal(principal({ caller: { kind: "client" }, context: { threadId: "child" } }, { subagentOf: "parent" }).threadId, "child");
+  assert.throws(() => principal({ caller: { kind: "agent", threadId: "child", subagentOf: "parent" }, context: { threadId: "parent" } }), /own thread/);
+});
+
+test("shared Realm preferences, control, terminal jobs and driver sessions belong to the parent", async () => {
+  const { realms, runtime } = await setup();
+  const parent = principal(agent("parent")), child = childAgent(), person = childClient();
+  const first = await realms.on(parent, {});
+  const shared = await realms.on(child, {});
+  assert.equal(shared.realm.id, first.realm.id);
+  assert.equal(shared.sharedFrom, "parent");
+  assert.match((await realms.badge(person)).detail, /shared from parent/i);
+  await Promise.all([realms.computer(parent, { tool: "list" }), realms.computer(child, { tool: "list" })]);
+  assert.equal(runtime.state.sessions.length, 1);
+  await realms.terminal(child, { jobId: "cmd-1" });
+  await realms.takeControl(person);
+  await rejects(realms.terminal(parent, { jobId: "cmd-1" }), "human_control");
+  await rejects(realms.terminal(child, { jobId: "cmd-1" }), "human_control");
+  await realms.handBack(principal(client("parent")));
+  await realms.off(person);
+  await rejects(realms.on(parent, {}), "disabled");
+  await rejects(realms.terminal(child, { jobId: "cmd-1" }), "disabled");
+  assert.ok(!runtime.state.calls.some(([, input]) => input.owner === "thread:child"));
+});
+
+async function pendingSetup(options = {}) {
+  const sent = [];
+  const s = await setup({ ready: false, sendThread: async (input) => { sent.push(input); if (options.error) throw options.error; }, ...options });
+  const who = options.child ? childAgent() : principal(agent("parent"));
+  await rejects(s.realms.on(who, {}), "setup_required");
+  s.runtime.state.ready = true;
+  const person = principal(client("parent"));
+  // A successful person-approved setup job; no command arguments belong in its receipt.
+  const job = { job_id: "approved-setup", kind: "driver_install", state: "succeeded", created_at: 0 };
+  s.runtime.state.jobs.set(job.job_id, job);
+  return { ...s, sent, who, person, job };
+}
+
+test("a person observes successful setup once and resumes only the requesting thread", async () => {
+  const s = await pendingSetup({ child: true });
+  // Approval attaches pending requests, even when setup is global on the page.
+  await s.realms.setupStart(principal(client()), { reviewId: (await s.realms.setupReview(principal(client()))).data.reviewId });
+  await Promise.all([s.realms.jobStatus(s.person, { jobId: s.job.job_id }), s.realms.badge(childClient()), s.realms.status(s.person)]);
+  assert.equal(s.sent.length, 1);
+  assert.equal(s.sent[0].threadId, "child");
+  assert.ok(s.sent[0].idempotencyKey);
+  assert.match(s.sent[0].text, /reevaluate/i);
+  assert.match(s.sent[0].text, /do not replay/i);
+  await s.realms.status(s.person);
+  assert.equal(s.sent.length, 1);
+});
+
+test("setup continuation is revoked by off, kind switch, expiry, denial or uncertain send", async () => {
+  for (const outcome of ["off", "switch", "expired", "denied", "uncertain"]) {
+    let clock = 100;
+    const s = await pendingSetup({ now: () => clock, error: ["denied", "uncertain"].includes(outcome) ? Object.assign(new Error(outcome), { reason: outcome === "denied" ? "permission_denied" : "storage_failed" }) : undefined });
+    if (outcome === "off") await s.realms.off(s.person);
+    if (outcome === "switch") await s.realms.on(s.person, { kind: "omarchy-vm" });
+    if (outcome === "expired") clock += 3600001;
+    await s.realms.setupStart(principal(client()), { reviewId: (await s.realms.setupReview(principal(client()))).data.reviewId });
+    await s.realms.status(s.person);
+    await s.realms.status(s.person);
+    assert.equal(s.sent.length, ["denied", "uncertain"].includes(outcome) ? 1 : 0, outcome);
+  }
+});
+
+test("manual setup and failed, cancelled, interrupted setup never resume an agent", async () => {
+  for (const state of ["failed", "cancelled", "running"]) {
+    const s = await pendingSetup();
+    s.job.state = state;
+    await s.realms.jobStatus(s.person, { jobId: s.job.job_id });
+    await s.realms.status(s.person);
+    assert.equal(s.sent.length, 0);
+  }
+  const sent = [];
+  const { realms } = await setup({ sendThread: async (input) => sent.push(input) });
+  await realms.status(principal(client("manual")));
+  assert.equal(sent.length, 0);
+});
+
+test("approved detached setup resumes on client polls, never on agent polls, across worker restart", async () => {
+  const sent = [];
+  const s = await setup({ ready: false, sendThread: async (input) => sent.push(input) });
+  const me = principal(agent("parent"));
+  await rejects(s.realms.terminal(me, { command: "private-command-never-replayed" }), "setup_required");
+  const original = s.runtime.call;
+  s.runtime.call = async (command, input, options) => command === "setup_plan"
+    ? { ready: false, missing: ["labwc"], packages: ["labwc"], blockers: [], command: "reviewed-command", argv: ["reviewed-command"], reviewId: "approved-plan" }
+    : original(command, input, options);
+  const started = await s.realms.setupStart(principal(client()), { reviewId: "approved-plan" });
+  const job = s.runtime.state.jobs.get(started.data.jobId);
+  job.state = "running";
+  await s.realms.jobStatus(principal(client()), { jobId: job.job_id });
+  s.runtime.state.ready = true;
+  job.state = "succeeded";
+  await s.realms.status(me);
+  assert.equal(sent.length, 0, "an agent cannot trigger continuation");
+  const restarted = createRealms({ ...s.options, settings: { get: async () => null }, sendThread: async (input) => sent.push(input) });
+  await Promise.all([restarted.badge(principal(client("parent"))), restarted.jobStatus(principal(client()), { jobId: job.job_id })]);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].threadId, "parent");
+  assert.ok(!sent[0].text.includes("private-command"));
+  assert.ok(!s.runtime.state.calls.some(([command]) => command === "exec"));
+});
+
+test("failed or cancelled approved setup cannot continue even if later prerequisites look ready", async () => {
+  for (const state of ["failed", "cancelled", "interrupted"]) {
+    const sent = [];
+    const s = await setup({ ready: false, sendThread: async (input) => sent.push(input) });
+    await rejects(s.realms.on(principal(agent("parent")), {}), "setup_required");
+    const original = s.runtime.call;
+    s.runtime.call = async (command, input, options) => command === "setup_plan"
+      ? { ready: false, missing: [], packages: [], blockers: [], reviewId: "approved-plan" }
+      : original(command, input, options);
+    const started = await s.realms.setupStart(principal(client()), { reviewId: "approved-plan" });
+    const job = s.runtime.state.jobs.get(started.data.jobId);
+    job.state = state;
+    s.runtime.state.ready = true;
+    await s.realms.jobStatus(principal(client()), { jobId: job.job_id });
+    await s.realms.status(principal(client("parent")));
+    assert.equal(sent.length, 0, state);
+  }
+});
+
+test("shared VM transfer jobs, size and stopping use the owner identity", async () => {
+  const { realms, runtime } = await setup();
+  const parent = principal(agent("parent"));
+  await realms.on(parent, { kind: "omarchy-vm" });
+  const job = await realms.files(parent, { action: "push", source: "/source" });
+  await realms.files(childAgent(), { action: "status", jobId: job.data.jobId });
+  await realms.resize(childAgent(), { size: "1280x720" });
+  await realms.stop(childAgent());
+  assert.equal((await realms.status(parent)).realm.state, "stopped");
+  assert.ok(!runtime.state.calls.some(([, input]) => input.owner === "thread:child"));
+});
+
+test("a queued subagent start rechecks the parent's Off after acquiring ownership", async () => {
+  const s = await setup();
+  await s.realms.on(principal(agent("parent")), {});
+  let releaseOff, offEntered, preferenceRead;
+  const blocked = new Promise((resolve) => { releaseOff = resolve; });
+  const entered = new Promise((resolve) => { offEntered = resolve; });
+  const read = new Promise((resolve) => { preferenceRead = resolve; });
+  const get = s.storage.get;
+  let intercepted = false;
+  s.storage.get = async (key) => {
+    if (key === "setup-continuations-v1" && !intercepted) {
+      intercepted = true;
+      offEntered();
+      await blocked;
+    }
+    const value = await get(key);
+    if (key.startsWith("thread.")) preferenceRead();
+    return value;
+  };
+  const off = s.realms.off(childClient());
+  await entered;
+  const queued = s.realms.terminal(childAgent(), { command: "never-after-off", background: true });
+  await read;
+  const refused = rejects(queued, "disabled");
+  releaseOff();
+  await off;
+  await refused;
+  assert.ok(!s.runtime.state.calls.some(([command, input]) => command === "exec" && input.argv.includes("never-after-off")));
+});
+
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+};
+const testKey = async (kind, id) => `${kind}.${(await import("node:crypto")).createHash("sha256").update(id).digest("hex")}`;
+const boundaryText = (text) => {
+  assert.match(text, /only this Realm|this Realm call|Realm actions only/i);
+  assert.match(text, /ordinary.*(shell|tools|files).*unaffected/i);
+  assert.match(text, /continue.*(work|ordinary)/i);
+};
+async function robustFixture(t, options) {
+  const s = await setup(options);
+  t.after(async () => { s.realms.dispose(); await fs.rm(s.dataDirectory, { recursive: true, force: true }); });
+  s.me = principal(agent("parent")); s.person = principal(client("parent"));
+  return s;
+}
+function pauseRuntime(s, selected) {
+  const entered = deferred(), gate = deferred(), base = s.runtime.call;
+  s.runtime.call = async (command, input, options) => {
+    if (command === selected) { entered.resolve(); await gate.promise; }
+    return base(command, input, options);
+  };
+  return { entered: entered.promise, release: gate.resolve };
+}
+
+test("robust C9/C10: discovery and management preserve the ordinary-tool boundary and correct child context", async (t) => {
+  const s = await robustFixture(t);
+  const manifest = JSON.parse(await fs.readFile(new URL("../t3-plugin.json", import.meta.url)));
+  for (const action of manifest.actions.filter((entry) => entry.agentCallable)) boundaryText(action.description);
+  assert.throws(() => principal({ caller: { kind: "agent", threadId: "child", subagentOf: "parent" }, context: { threadId: "parent" } }), (error) => {
+    assert.match(error.message, /omit.*override/i); assert.match(error.message, /automatically/i); boundaryText(error.message); return true;
+  });
+  const { activate, deactivate } = await import("../plugin.mjs");
+  const handlers = new Map();
+  const interpreter = path.join(s.dataDirectory, "fake-python");
+  await fs.writeFile(interpreter, `#!/usr/bin/env python3
+import json, sys
+command = sys.argv[sys.argv.index('--home') + 2]
+results = {'list': [], 'job_list': [], 'doctor': {'ready': True}}
+print(json.dumps({'ok': True, 'result': results[command]}))
+`, { mode: 0o700 });
+  await activate({ storage: s.storage, settings: { get: async (key) => key === "python" ? interpreter : null }, dataDirectory: s.dataDirectory,
+    signal: new AbortController().signal, handle: (name, handler) => handlers.set(name, handler) });
+  t.after(deactivate);
+  // Watch is a real agent management reply that does not require a native runtime.
+  const result = await handlers.get("action:realm")({ action: "watch" }, agent("parent"));
+  boundaryText(result.message);
+  const off = await handlers.get("action:realm")({ action: "off" }, agent("parent"));
+  assert.equal(off.data.mode, "off"); boundaryText(off.message); assert.match(off.message, /nothing to exit/i);
+  const status = await handlers.get("action:realm")({ action: "status" }, agent("parent"));
+  boundaryText(status.message); assert.match(status.message, /off is not needed/i);
+  await assert.rejects(handlers.get("action:realm-terminal")({ command: "true" }, agent("parent")), (error) => { boundaryText(error.message); assert.match(error.message, /nothing to exit/i); return true; });
+  await assert.rejects(handlers.get("action:realm")({ action: "unknown" }, agent("parent")), (error) => { boundaryText(error.message); return true; });
+});
+
+test("robust lineage: unresolved caller ancestry never allocates a separate Realm", () => {
+  assert.throws(() => principal({ caller: { kind: "agent", threadId: "child", lineage: "unresolved" } }), (error) => {
+    assert.equal(error.code, "lineage_unresolved"); assert.match(error.message, /retry.*status/i); boundaryText(error.message); return true;
+  });
+  assert.equal(principal(agent("root")).threadId, "root");
+});
+
+for (const turnOnAgain of [false, true]) test(`robust B4/parity1: Off${turnOnAgain ? " then On" : ""} during cold preparation fences input and session publication`, async (t) => {
+  const s = await robustFixture(t); await s.realms.on(s.me, {});
+  const gate = pauseRuntime(s, "driver_launcher");
+  const pending = s.realms.computer(childAgent(), { tool: "click", arguments: {} });
+  const refused = rejects(pending, "disabled");
+  await gate.entered; await s.realms.off(s.person);
+  if (turnOnAgain) await s.realms.on(s.person, {});
+  gate.release(); await refused;
+  assert.deepEqual(s.cuaCalls, []); assert.ok(s.runtime.state.sessions.every((session) => session.closed));
+});
+
+test("robust B5: disposal invalidates a connection completing after session ready", async (t) => {
+  const s = await robustFixture(t); await s.realms.on(s.me, {});
+  const gate = pauseRuntime(s, "driver_launcher");
+  const pending = s.realms.computer(s.me, { tool: "click" }); const refused = rejects(pending, "cancelled");
+  await gate.entered; s.realms.dispose(); gate.release(); await refused;
+  assert.deepEqual(s.cuaCalls, []); assert.ok(s.runtime.state.sessions.every((session) => session.closed));
+});
+
+for (const handBack of [false, true]) test(`robust parity2: capture withholds and removes pixels after takeover${handBack ? " and handback" : ""}`, async (t) => {
+  const s = await robustFixture(t); await s.realms.on(s.me, {});
+  await fs.mkdir(path.join(s.dataDirectory, "assets"));
+  const asset = path.join(s.dataDirectory, "assets/shot-1.jpg"); await fs.writeFile(asset, "private pixels");
+  const gate = pauseRuntime(s, "shot"); const pending = s.realms.shot(s.me); const refused = rejects(pending, "human_control");
+  await gate.entered; await s.realms.takeControl(s.person); if (handBack) await s.realms.handBack(s.person);
+  gate.release(); await refused; await assert.rejects(fs.stat(asset), { code: "ENOENT" });
+});
+
+for (const kind of ["realm", "omarchy-vm"]) test(`robust parity3: retained ${kind} Stop preserves another kind startup`, async (t) => {
+  const s = await robustFixture(t); const state = await s.realms.on(s.me, { kind });
+  const old = s.runtime.state.records.get(state.realm.id); old.status = "stopped";
+  s.runtime.state.jobs.set("other-start", { job_id: "other-start", owner: "thread:parent", kind: "start", state: "running", input: { config: { kind: kind === "realm" ? "omarchy-vm" : "realm" } } });
+  await s.realms.stopById(s.person, { realmId: old.id });
+  assert.ok(!s.runtime.state.calls.some(([command, input]) => command === "job_cancel" && input.job_id === "other-start"));
+});
+
+test("robust B8: cancelled queued Off never mutates preferences and releases its lock", async (t) => {
+  const s = await robustFixture(t); const gate = pauseRuntime(s, "job_start");
+  const starting = s.realms.on(s.me, {}); await gate.entered;
+  const controller = new AbortController(); const off = s.realms.off(s.person, { signal: controller.signal });
+  controller.abort(); const refused = rejects(off, "cancelled"); gate.release(); await starting; await refused;
+  assert.equal((await s.realms.status(s.me)).mode, "realm");
+  assert.equal((await s.realms.off(s.person)).mode, "off");
+});
+
+test("robust B3: malformed saved kind recovers without clearing a person's Off", async (t) => {
+  const s = await robustFixture(t); const key = await testKey("thread", "parent");
+  await s.storage.set(key, { kind: "not-a-kind", mode: "off", setBy: "user" });
+  assert.equal((await s.realms.status(s.me)).mode, "off");
+  await rejects(s.realms.on(s.me, { kind: "realm" }), "disabled");
+  assert.equal((await s.realms.on(s.person, { kind: "realm" })).kind, "realm");
+  assert.equal((await s.realms.terminal(s.me, { command: "true" })).data.exitCode, 0);
+});
+
+test("robust C1/C6: cleanup and retained-data recovery expose distinct next steps without starting", async (t) => {
+  const s = await robustFixture(t);
+  for (const cleanup of [true, false]) {
+    s.runtime.state.records.set("retained", { id: "retained", owner: "thread:parent", generation: "g", status: "recovery-required", cleanup_required: cleanup, recovery_reason: cleanup ? "Compute retirement unconfirmed" : "Retained disk changed" });
+    const state = await s.realms.status(s.me); assert.equal(state.realm.cleanupRequired, cleanup);
+    assert.match(state.realm.nextStep, cleanup ? /retry Stop/ : /preserve.*data/i);
+    for (const use of [() => s.realms.terminal(s.me, { command: "true" }), () => s.realms.computer(s.me, { tool: "list" }), () => s.realms.repair(s.me)])
+      await assert.rejects(use(), (error) => { assert.equal(error.code, "recovery_required"); boundaryText(error.message); return true; });
+  }
+  assert.ok(!s.runtime.state.calls.some(([command]) => command === "job_start"));
+  s.runtime.state.records.get("retained").status = "cleanup_failed";
+  const status = await s.realms.status(s.me); assert.match(status.realm.nextStep, /retry Stop/);
+});
+
+test("robust C3: failed detached boot remains visible and implicit tools do not reboot", async (t) => {
+  const s = await robustFixture(t); const job = { job_id: "failed-boot", owner: "thread:parent", kind: "start", state: "failed", code: "timeout", error: "boot deadline expired", input: { config: { kind: "realm" } } };
+  s.runtime.state.jobs.set(job.job_id, job);
+  const status = await s.realms.status(s.me); assert.equal(status.startAttempt.jobId, job.job_id); assert.equal(status.startAttempt.error, job.error);
+  await assert.rejects(s.realms.terminal(s.me, { command: "true" }), (error) => { assert.match(error.message, /boot deadline expired/); assert.match(error.message, /action.*on/); return true; });
+  assert.ok(!s.runtime.state.calls.some(([command]) => command === "job_start"));
+  assert.equal((await s.realms.on(s.me, {})).realm.state, "live");
+});
+
+test("robust C2: failed staging is visible, wrong-kind poll is actionable and no second staging starts", async (t) => {
+  const s = await robustFixture(t); const state = await s.realms.on(s.me, { kind: "omarchy-vm" });
+  const job = { job_id: "driver-stage", owner: "thread:parent", kind: "vm_driver", state: "failed", error: "Guest driver checksum mismatch", input: { id: state.realm.id, incarnation: "g1" } };
+  s.runtime.state.jobs.set(job.job_id, job);
+  assert.equal((await s.realms.status(s.me)).driverPreparation.error, job.error);
+  await assert.rejects(s.realms.computer(s.me, { tool: "list" }), /checksum mismatch/);
+  assert.ok(!s.runtime.state.calls.some(([command]) => command === "driver_launcher"));
+  await assert.rejects(s.realms.files(s.me, { action: "status", jobId: job.job_id }), (error) => {
+    assert.equal(error.code, "invalid_input"); assert.match(error.message, /driver.*status/i); return true;
+  });
+});
+
+test("robust C4: failed takeover keeps a scoped hold across workers until person Hand back", async (t) => {
+  const s = await robustFixture(t); await s.realms.on(s.me, {}); const base = s.runtime.call;
+  s.runtime.call = async (command, input, options) => { if (command === "vnc_endpoint") throw new RealmError("not_running", "Display unavailable"); return base(command, input, options); };
+  await rejects(s.realms.takeControl(s.person), "not_running");
+  const restarted = createRealmsLike(s); t.after(() => restarted.dispose());
+  assert.equal((await restarted.status(s.person)).realm.controlConnection, "failed");
+  await assert.rejects(restarted.terminal(childAgent(), { command: "true" }), (error) => { boundaryText(error.message); assert.match(error.message, /Hand back/); return true; });
+  await restarted.handBack(s.person); assert.equal((await restarted.terminal(childAgent(), { command: "true" })).data.exitCode, 0);
+});
+
+for (const method of ["get", "set"]) test(`robust C8: optional continuation ${method} failure preserves setup blocker`, async (t) => {
+  const s = await robustFixture(t, { ready: false }); const original = s.storage[method];
+  s.storage[method] = async (key, ...args) => { if (key === "setup-continuations-v1") throw new Error("Notification store offline"); return original(key, ...args); };
+  await assert.rejects(s.realms.terminal(s.me, { command: "true" }), (error) => {
+    assert.equal(error.code, "setup_required"); assert.match(error.message, /Install labwc/); assert.match(error.message, /manually/); boundaryText(error.message); return true;
+  });
+  assert.ok(!s.runtime.state.calls.some(([command]) => command === "job_start"));
+});
+
+test("robust C11: unavailable setup continuation is visible on repeated client observations", async (t) => {
+  const s = await robustFixture(t, { ready: false }); await rejects(s.realms.terminal(s.me, { command: "true" }), "setup_required");
+  s.runtime.state.ready = true; await s.realms.setupStart(s.person, { reviewId: "ready-plan" });
+  for (let i = 0; i < 2; i++) {
+    const state = await s.realms.status(s.person); assert.equal(state.setup.ready, true);
+    assert.equal(state.continuation[0].state, "unavailable"); assert.match(state.continuation[0].message, /ask the agent to continue/i);
+  }
+});
+
+test("robust C5: argument data and inherited private endpoints execute, overrides stay scoped", async (t) => {
+  const s = await robustFixture(t);
+  for (const command of ["printf '%s\\n' A=1 DISPLAY=:0", 'env WAYLAND_DISPLAY="$WAYLAND_DISPLAY" true'])
+    assert.equal((await s.realms.terminal(s.me, { command })).data.exitCode, 0);
+  await assert.rejects(s.realms.terminal(s.me, { command: "DISPLAY=:0 xdotool key Return" }), (error) => { boundaryText(error.message); assert.match(error.message, /remove.*override/i); return true; });
+});
+
+test("robust C7/B7: ambiguous exec reports uncertainty; admitted cancelled job stays controllable", async (t) => {
+  const s = await robustFixture(t); await s.realms.on(s.me, {}); const base = s.runtime.call;
+  s.runtime.call = async (command, input, options) => { if (command === "exec") throw new RealmError("timeout", "reply lost"); return base(command, input, options); };
+  await assert.rejects(s.realms.terminal(s.me, { command: "write-once" }), (error) => { assert.match(error.message, /may already have started/); assert.match(error.message, /not.*resubmit.*blindly/i); boundaryText(error.message); return true; });
+  const controller = new AbortController();
+  s.runtime.call = async (command, input, options) => { const result = await base(command, input, options); if (command === "exec") controller.abort(); if (options?.signal?.aborted) throw new RealmError("cancelled", "cancelled"); return result; };
+  // Acknowledgement may be lost; inspect status for any durable receipt when available.
+  await assert.rejects(s.realms.terminal(s.me, { command: "long-command" }, { signal: controller.signal }), /may already have started|job cmd-1/);
+});
+
+test("robust B7: foreground cancellation preserves the acknowledged job id in status", async (t) => {
+  const s = await robustFixture(t); await s.realms.on(s.me, {}); const controller = new AbortController(), base = s.runtime.call;
+  s.runtime.call = async (command, input, options) => {
+    if (command === "job") { controller.abort(); throw new RealmError("cancelled", "poll cancelled"); }
+    return base(command, input, options);
+  };
+  await assert.rejects(s.realms.terminal(s.me, { command: "long-command" }, { signal: controller.signal }), /cmd-1/);
+  const status = await s.realms.status(s.me); assert.equal(status.terminalJobs[0].jobId, "cmd-1");
+  s.runtime.call = base; assert.equal((await s.realms.terminal(childAgent(), { jobId: "cmd-1", signal: "TERM" })).data.jobId, "cmd-1");
+});
+
+for (const method of ["shot", "frame"]) test(`robust B6: ${method} never returns an image above the host limit`, async (t) => {
+  const s = await robustFixture(t); await s.realms.on(s.me, {}); const base = s.runtime.call;
+  await fs.mkdir(path.join(s.dataDirectory, "assets")); const asset = path.join(s.dataDirectory, "assets/shot-large.jpg"); await fs.writeFile(asset, Buffer.alloc(4 * 1024 * 1024 + 1));
+  s.runtime.call = async (command, input, options) => command === "shot" ? { path: "assets/shot-large.jpg", mimeType: "image/jpeg", bytes: 1, width: 3840, height: 2160 } : base(command, input, options);
+  await assert.rejects(s.realms[method](method === "frame" ? s.person : s.me, { scale: 1 }), (error) => { assert.equal(error.code, "image_too_large"); assert.match(error.message, /smaller|scale|zoom/i); return true; });
+  await assert.rejects(fs.stat(asset), { code: "ENOENT" });
+});
+
+test("robust B9: status observing idle retirement closes the old MCP proxy", async (t) => {
+  const s = await robustFixture(t); const state = await s.realms.on(s.me, {}); await s.realms.computer(s.me, { tool: "list" });
+  s.runtime.state.records.get(state.realm.id).status = "stopped"; await s.realms.status(s.person);
+  assert.ok(s.runtime.state.sessions.every((session) => session.closed));
+});
+
+test("robust B1/B2: regular driver retirement is native-owned even without plugin tracking", async (t) => {
+  const s = await robustFixture(t); const state = await s.realms.on(s.me, {}); await s.realms.computer(s.me, { tool: "list" });
+  await s.storage.delete(await testKey("driver", state.realm.id)); const base = s.runtime.call;
+  let retired = false;
+  s.runtime.call = async (command, input, options) => {
+    if (command === "driver_stop") { assert.equal(input.incarnation, "g1"); retired = true; return { retired: true }; }
+    return base(command, input, options);
+  };
+  await s.realms.repair(s.me); assert.equal(retired, true);
+});
+
+test("robust Off: cleanup failure stays visible after access was successfully revoked", async (t) => {
+  const s = await robustFixture(t); await s.realms.on(s.me, {}); const base = s.runtime.call;
+  s.runtime.call = async (command, input, options) => { if (command === "driver_stop") throw new Error("owned endpoint retirement unavailable"); return base(command, input, options); };
+  const state = await s.realms.off(s.person);
+  assert.equal(state.mode, "off"); assert.equal(state.driverCleanup.state, "failed"); assert.match(state.driverCleanup.nextStep, /Stop/);
+  await rejects(s.realms.terminal(s.me, { command: "true" }), "disabled");
+});
+
+test("robust C7: lost GUI reply gives bounded repair guidance without replaying input", async (t) => {
+  const s = await robustFixture(t); await s.realms.computer(s.me, { tool: "list" }); let inputs = 0;
+  s.runtime.state.sessions[0].call = async () => { inputs++; throw new RealmError("driver_unavailable", "driver exited"); };
+  await assert.rejects(s.realms.computer(s.me, { tool: "click" }), (error) => {
+    assert.match(error.message, /may already have landed/); assert.match(error.message, /try one.*repair/i); assert.match(error.message, /fresh capture/); boundaryText(error.message); return true;
+  });
+  assert.equal(inputs, 1);
+});
+
+test("robust admission: Off while transfer touch waits prevents admission", async (t) => {
+  const s = await robustFixture(t); await s.realms.on(s.me, { kind: "omarchy-vm" });
+  const gate = pauseRuntime(s, "touch"); const pending = s.realms.files(s.me, { action: "push", source: "/source" }); const refused = rejects(pending, "disabled");
+  await gate.entered; await s.realms.off(s.person); gate.release(); await refused;
+  assert.ok(!s.runtime.state.calls.some(([command, input]) => command === "job_start" && input.kind === "transfer"));
+});
+
+test("robust C11: denied and uncertain continuation outcomes are visible without dispatch retry", async (t) => {
+  for (const state of ["denied", "uncertain"]) {
+    let attempts = 0;
+    const s = await robustFixture(t, { ready: false, sendThread: async () => { attempts++; throw Object.assign(new Error("send unconfirmed"), { code: state === "denied" ? "permission_denied" : "storage_failed" }); } });
+    await rejects(s.realms.on(s.me, {}), "setup_required"); s.runtime.state.ready = true;
+    await s.realms.setupStart(s.person, { reviewId: "ready-plan" });
+    for (let i = 0; i < 2; i++) { const status = await s.realms.status(s.person); assert.equal(status.continuation[0].state, state); assert.equal(status.continuation[0].manualContinuationRequired, true); }
+    assert.equal(attempts, 1);
+  }
+});
+
+test("robust C1: broken inventory still exposes status and exact person Stop recovery", async (t) => {
+  const s = await robustFixture(t); const state = await s.realms.on(s.me, {}); const base = s.runtime.call;
+  s.runtime.call = async (command, input, options) => { if (command === "list") throw new Error("Permission denied: unrelated cleanup"); return base(command, input, options); };
+  const status = await s.realms.status(s.me); assert.match(status.runtimeFailure.error, /unrelated cleanup/); assert.match(status.runtimeFailure.nextStep, /person.*cleanup/i);
+  assert.equal((await s.realms.off(s.person)).mode, "off");
+  await s.realms.stopById(s.person, { realmId: state.realm.id });
+  assert.equal(s.runtime.state.records.get(state.realm.id).status, "stopped");
+});
+
+test("robust B2: a duplicate serve that exits during handshake is never adopted", async (t) => {
+  const s = await robustFixture(t); const state = await s.realms.on(s.me, {}); await s.realms.computer(s.me, { tool: "list" });
+  const key = await testKey("driver", state.realm.id); await s.storage.delete(key); s.runtime.state.sessions[0].close();
+  const base = s.runtime.call;
+  s.runtime.call = async (command, input, options) => {
+    const result = await base(command, input, options);
+    if (command === "job" && input.job_id === "serve-2") s.runtime.state.daemonJobs.get(input.job_id).returncode = 1;
+    return result;
+  };
+  await assert.rejects(s.realms.computer(s.me, { tool: "click" }), /identity.*not adopted|retirement.*unconfirmed/i);
+  assert.notEqual((await s.storage.get(key))?.jobId, "serve-2");
+  assert.deepEqual(s.cuaCalls, []);
+});
+
+test("robust disposal: late session-ready completion closes the unpublished proxy", async (t) => {
+  const s = await robustFixture(t); await s.realms.on(s.me, {});
+  const ready = deferred(), entered = deferred();
+  const restarted = createRealms({ ...s.options, settings: { get: async () => null }, connectCua: () => {
+    const session = { closed: false, ready: ready.promise, close() { this.closed = true; }, call() { throw new Error("must not dispatch"); } };
+    s.runtime.state.sessions.push(session); entered.resolve(); return session;
+  } });
+  t.after(() => restarted.dispose());
+  const pending = restarted.computer(s.me, { tool: "click" }); const refused = rejects(pending, "cancelled");
+  await entered.promise; restarted.dispose(); ready.resolve(); await refused;
+  assert.ok(s.runtime.state.sessions.every((session) => session.closed));
+});
+
+test("robust parity3: exact prepared startup cancels, stale incarnation startup survives", async (t) => {
+  const s = await robustFixture(t); const state = await s.realms.on(s.me, {}); const record = s.runtime.state.records.get(state.realm.id); record.status = "starting";
+  for (const generation of ["older", "g1"]) {
+    s.runtime.state.calls.length = 0; record.status = "starting";
+    s.runtime.state.jobs.set("exact-start", { job_id: "exact-start", owner: record.owner, kind: "start", state: "running", input: { config: { kind: "realm" } }, progress: { realm_id: record.id, generation } });
+    await s.realms.stopById(s.person, { realmId: record.id });
+    assert.equal(s.runtime.state.calls.some(([command, input]) => command === "job_cancel" && input.job_id === "exact-start"), generation === "g1");
+  }
+});
+
+test("robust status: a long recovery cause fits the host badge and retains its next step", async (t) => {
+  const s = await robustFixture(t); const state = await s.realms.on(s.me, {}); const record = s.runtime.state.records.get(state.realm.id);
+  record.status = "recovery-required"; record.cleanup_required = true; record.recovery_reason = "x".repeat(6000);
+  const badge = await s.realms.badge(s.person); assert.ok(badge.detail.length <= 300); assert.match(badge.detail, /retry Stop/);
+});
+
+test("robust C3: observed boot failure survives native job-history pruning", async (t) => {
+  const s = await robustFixture(t);
+  s.runtime.state.jobs.set("lost-boot", { job_id: "lost-boot", kind: "start", owner: "thread:parent", state: "failed", error: "guest boot failed", input: { config: { kind: "realm" } } });
+  await s.realms.status(s.me); s.runtime.state.jobs.clear();
+  const status = await s.realms.status(s.me); assert.equal(status.startAttempt?.jobId, "lost-boot");
+  await assert.rejects(s.realms.terminal(s.me, { command: "true" }), /guest boot failed/);
+  assert.ok(!s.runtime.state.calls.some(([command]) => command === "job_start"));
+});
+
+test("robust C2: observed staging failure survives native job-history pruning", async (t) => {
+  const s = await robustFixture(t); const state = await s.realms.on(s.me, { kind: "omarchy-vm" });
+  s.runtime.state.jobs.set("lost-staging", { job_id: "lost-staging", kind: "vm_driver", owner: "thread:parent", state: "failed", error: "driver checksum mismatch", input: { id: state.realm.id, incarnation: "g1" } });
+  await s.realms.status(s.me); s.runtime.state.jobs.clear();
+  const status = await s.realms.status(s.me); assert.equal(status.driverPreparation?.jobId, "lost-staging");
+  await assert.rejects(s.realms.computer(s.me, { tool: "list" }), /checksum mismatch/);
+  assert.ok(!s.runtime.state.calls.some(([command]) => command === "driver_launcher"));
+});
+
+test("native VM: allocated compute is usable until retirement actually needs recovery", async (t) => {
+  const s = await setup();
+  t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  const who = { kind: "agent", threadId: "vm-live-cleanup" };
+  const started = await s.realms.on(who, { kind: "omarchy-vm" });
+  const record = s.runtime.state.records.get(started.realm.id);
+  record.cleanup_required = true;
+  for (const state of ["starting", "running", "stopping"]) {
+    record.status = state;
+    const status = await s.realms.status(who);
+    assert.equal(status.realm.needsRecovery, false);
+    assert.equal(status.realm.cleanupRequired, false);
+    assert.equal(status.realm.nextStep, null);
+  }
+  record.status = "running";
+  assert.equal((await s.realms.terminal(who, { command: "true" })).data.exitCode, 0);
+  await s.realms.computer(who, { tool: "list" });
+  assert.equal((await s.realms.badge(who)).label, "Live");
+  record.status = "recovery-required";
+  assert.equal((await s.realms.status(who)).realm.needsRecovery, true);
+  await rejects(s.realms.terminal(who, { command: "true" }), "recovery_required");
+});
+
+test("robust C11: already-ready global setup exposes the requesting thread's manual outcome", async (t) => {
+  const s = await robustFixture(t, { ready: false }); await rejects(s.realms.on(s.me, {}), "setup_required"); s.runtime.state.ready = true;
+  const result = await s.realms.setupStart({ kind: "user" }, { reviewId: "ready-plan" });
+  assert.equal(result.data.continuation[0]?.threadId, "parent"); assert.equal(result.data.continuation[0].state, "unavailable");
+});
+
+test("native requalification: terminal transfer failures describe the failure and explicit recovery", async (t) => {
+  const s = await setup();
+  t.after(() => fs.rm(s.dataDirectory, { recursive: true, force: true }));
+  const who = { kind: "agent", threadId: "transfer-diagnostic" };
+  await s.realms.on(who, { kind: "omarchy-vm" });
+  for (const state of ["failed", "cancelled"]) {
+    s.runtime.state.jobs.set(state, { job_id: state, kind: "transfer", owner: "thread:transfer-diagnostic", state,
+      error: state === "failed" ? "Destination conflict: retained.txt" : "Operation cancelled" });
+    const result = await s.realms.files(who, { action: "status", jobId: state });
+    assert.match(result.message, new RegExp(state));
+    assert.match(result.message, /Only this Realm transfer/);
+    assert.match(result.message, /Inspect.*source.*destination/);
+    assert.match(result.message, /explicit retry/);
+    assert.match(result.message, /do not blindly replay/i);
+    assert.match(result.message, state === "failed" ? /Destination conflict: retained.txt/ : /Operation cancelled/);
+    assert.equal(result.data.state, state);
+  }
+  assert.equal(s.runtime.state.calls.filter(([command, input]) => command === "job_start" && input.kind === "transfer").length, 0);
 });

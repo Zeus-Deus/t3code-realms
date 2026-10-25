@@ -52,7 +52,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_config_rejects_invalid_values(self):
         self.assertEqual(Config.from_object({}).size, '1920x1080')
-        for value in ({'vm': {}}, {'size': '10x20'}, {'renderer': 'auto'},
+        for value in ({'vm': {'unknown': 1}}, {'size': '10x20'}, {'renderer': 'auto'},
                       {'idle_ttl': True}, {'idle_ttl': float('nan')},
                       {'idle_ttl': 0}, {'idle_ttl': 10 ** 400}, {'overlay': 1}, {'cursor_theme': ''},
                       {'cursor_theme': '\0'}, []):
