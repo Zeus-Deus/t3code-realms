@@ -6,6 +6,8 @@ your screen, pointer or clipboard. Its ordinary work (shell, files, git and rese
 Realms never redirects or disables ordinary tools. There is nothing to exit: Off is not
 needed to continue coding. Off, takeover, setup and failures affect Realm actions only.
 
+![An agent checks a landing page in Chromium inside its Realm, shown live in the Realm panel next to the thread](docs/screenshots/realm-panel.png)
+
 A regular Realm is a lightweight private labwc/Wayland desktop with Xwayland on the T3 server's
 machine. It separates windows, pointer, keyboard, clipboard and session buses from your
 desktop, but shares the machine's kernel, files and network. **It is not a VM or a sandbox
@@ -66,6 +68,9 @@ Realm panel:
   captures pause until you **Hand back**. Losing the connection is not a handback; use Hand back
   even after a failed viewer connection. Agents can continue unrelated ordinary work throughout.
 
+| Maximized panel | You have control |
+|---|---|
+| ![The Realm panel maximized, with the desktop on the left and its controls beside it](docs/screenshots/realm-maximized.png) | ![Take control: the desktop is outlined and a bar under it offers Hand back](docs/screenshots/realm-take-control.png) |
 
 The **Realms** page lists every Realm on the environment, stops them, and deletes a stopped
 Realm's retained workspace after you type a confirmation. Deleting is separate from Stop.
