@@ -22,7 +22,7 @@ On the machine running the T3 server:
 - Linux x86-64 with systemd and Python 3.11+.
 - **Desktop:** `labwc`, `Xwayland`, `wayvnc`, `grim`, `wlr-randr`, `bubblewrap`, D-Bus and AT-SPI.
 - **Omarchy VM:** QEMU/KVM (`qemu-full`, `edk2-ovmf`, `mtools`), access to `/dev/kvm`, an `~/.ssh/id_ed25519` key, and about 46 GiB of free disk space.
-- A T3 Code build with the newer plugin host (verified callers, plugin data directory, image results and thread status).
+- A T3 Code build with the plugin system. It isn't in official T3 Code yet, so for now use the [`plugin-system` branch](https://github.com/Zeus-Deus/t3code/tree/plugin-system).
 
 Setup tells you exactly what's missing. On Arch Linux it can install the missing packages for you after you approve.
 
