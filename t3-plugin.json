@@ -11,11 +11,14 @@
     "ui",
     "threads.send"
   ],
+  "optionalCapabilities": [
+    "ui.conversation-cards"
+  ],
   "actions": [
     {
       "id": "realm",
       "title": "Realm: manage this thread's private desktop",
-      "description": "Manage this thread's private desktop. Input: {action: on|off|status|size|stop|repair|shot|watch, kind?: \"realm\"|\"omarchy-vm\", size?: \"WIDTHxHEIGHT\"}. on honors a named kind, otherwise reuses the thread preference; switching stops current compute and keeps both workspaces. Omarchy VM setup requires a person's reviewed approval (signed ISO ~5 GiB, plugin-local base and driver). off revokes agent use; stop ends compute and keeps data. VM stopped disks expire after the configured retention (14 days, 0 keeps). repair resets only the GUI connection; take a fresh capture and never replay uncertain input. shot returns an image. Status includes selected kind. Never substitute the physical desktop. A person's Off and human takeover exclude agent use. Verified subagents use the parent’s Realm; forks have their own. Omit thread overrides, coordinate shared-screen input, and respect Off and human takeover. Realm actions only; ordinary host tools are unaffected, so continue ordinary work.",
+      "description": "Manage this thread's private desktop. Input: {action: on|off|status|size|stop|repair|shot|watch, kind?: \"realm\"|\"omarchy-vm\", size?: \"WIDTHxHEIGHT\"}. on honors a named kind, otherwise reuses the thread preference; switching stops current compute and keeps both workspaces. Missing plugin-local parts install themselves: the driver during this call, the Omarchy VM in the background (signed ISO ~5 GiB, 15-30 minutes). While it prepares, on returns [preparing]; use kind realm meanwhile and you'll get a message when it's ready. System packages and other host changes need a person, shown as a card in this conversation. off revokes agent use; stop ends compute and keeps data. VM stopped disks expire after the configured retention (14 days, 0 keeps). repair resets only the GUI connection; take a fresh capture and never replay uncertain input. shot returns an image. Status includes selected kind. Never substitute the physical desktop. A person's Off and human takeover exclude agent use. Verified subagents use the parent’s Realm; forks have their own. Omit thread overrides, coordinate shared-screen input, and respect Off and human takeover. Realm actions only; ordinary host tools are unaffected, so continue ordinary work.",
       "placements": [],
       "agentCallable": true
     },
@@ -61,6 +64,12 @@
       "title": "Realms",
       "entry": "views/realms.html",
       "placement": "page"
+    },
+    {
+      "id": "setup",
+      "title": "Realm setup",
+      "entry": "views/setup.html",
+      "placement": "conversation"
     }
   ],
   "threadStatus": [
@@ -138,7 +147,7 @@
     {
       "key": "vmRelease",
       "label": "Omarchy base release",
-      "description": "Exact stable release for a new reviewed base install. The signed ISO is downloaded only after setup consent. Existing bases/workspaces are preserved.",
+      "description": "Exact stable release for a new reviewed base install. The signed ISO is downloaded when a VM is first prepared. Existing bases/workspaces are preserved.",
       "type": "string",
       "default": "4.0.4"
     }

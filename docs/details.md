@@ -5,12 +5,25 @@ setup, the panel, the Omarchy VM, sharing between agents and recovery.
 
 ## Install and setup
 
-Setup checks the packages listed in the README. When you approve, it downloads the pinned
-cua-driver 0.23.2 release from GitHub, verifies its checksums and installs it into the
-plugin's own data directory. On Arch Linux (`ID=arch`) hosts with `pacman` and `pkexec`,
-your approval can also request native Polkit authorization for the exact packages and
-command shown in the review. Other distributions, or a missing `pkexec`, remain explicit
-blockers. Realms never changes host SSH keys or KVM permissions.
+Setup checks the packages listed in the README. Anything that stays in the plugin's own
+data directory and needs no root installs itself when an agent first needs it:
+
+| What | When | Size |
+|---|---|---|
+| cua-driver 0.23.2, pinned and checksum-verified | During the agent's own call | About 46 MiB |
+| Omarchy VM base, from the signed ISO | In the background; the agent gets `preparing` and carries on | About a 5 GiB download, 15–30 minutes, 46 GiB free |
+
+These use the same reviewed plan as a person's approval, but the job is marked unattended
+and the runtime refuses it if the plan contains packages, so an agent can never reach
+`pkexec`. **Agent can use it** off stops installs for that thread. **Let agents install what
+they need** on the Realms page turns them off everywhere. A cancelled or failed install stays
+stopped until a person retries it from the chat card or Realm panel, however long ago it was.
+
+Everything else needs a person and appears as a card in the agent's conversation, or in the
+Realm panel where cards aren't granted. On Arch Linux (`ID=arch`) hosts with `pacman` and
+`pkexec`, your approval can request native Polkit authorization for the exact packages and
+command shown. Other distributions, or a missing `pkexec`, remain explicit blockers. Realms
+never changes your SSH keys or KVM permissions.
 
 Setup reviews include exact missing prerequisites, installable Arch packages, the full
 command and explicit blockers. The approved command uses `pkexec` and a root-side
@@ -20,18 +33,23 @@ Progress reports the package stage while native Polkit prompts on the server mac
 Cancellation prevents subsequent phases but lets an elevated package transaction finish
 safely before reporting cancellation. Completed packages and verified downloads remain.
 
-When an agent hits `setup_required`, Realms remembers its owner, requesting thread, kind
-and time, never its command. A person-approved setup job attaches that pending request.
-A client setup-job poll or thread-status poll that observes successful setup sends one
-short prompt to that same requesting thread. The agent must reevaluate the current task
-and authorization. Manual setup without a pending request creates no turn. If prerequisites
-were completed outside the plugin, approving the now-ready review can also confirm success.
+When an agent hits `setup_required` or `preparing`, Realms remembers its owner, requesting
+thread, kind and time, never its command. A setup job attaches that pending request. T3 gives
+plugins no background timer, so a client's setup-card, setup-job or thread-status poll that
+observes successful setup sends one short prompt to that same requesting thread. With T3
+closed, this happens the next time the thread is open. The agent must reevaluate the current
+task and authorization. Manual setup without a pending request creates no turn. If
+prerequisites were completed outside the plugin, approving the now-ready review can also
+confirm success.
 
-Requests expire after one hour. Off, switching kind, human takeover, failed/cancelled or
-interrupted setup invalidate the continuation. Missing project permission for `threads.send`
-or an uncertain send leaves setup successful without an automatic retry. Setup/status results
-show whether manual continuation is needed and identify the requesting thread; ask that agent
-to continue manually. Expired requests also need a manual instruction. Delivery is recorded before sending, so an interrupted worker does
+Requests expire after one hour. Off, human takeover, failed/cancelled or interrupted setup
+invalidate the continuation. So does switching kind, except that an unattended install keeps
+its request: the agent can work on Desktop while the VM prepares. An agent that carries on by
+itself settles its request, so it isn't resumed twice.
+
+`threads.send` needs both the capability and a grant for the thread's project. Without one,
+or after an uncertain send, setup stays successful and the card offers **Continue agent**.
+If the host refuses that too, the card shows a message for you to send. Delivery is recorded before sending, so an interrupted worker does
 not replay an ambiguous attempt. Subagents share one pending request per owner and kind;
 the first requesting thread receives that prompt. The backend does not check conversation
 idleness; the T3 host decides whether to queue the message or refuse it.
@@ -57,12 +75,15 @@ thread does not delete its Realm's workspace; remove it from the Realms page.
 ## Omarchy VM
 
 VM setup needs `qemu-full`, `edk2-ovmf`, `mtools`, OpenSSH, socat, jq, openssl, curl,
-GnuPG with Omarchy's signing keyring, a working systemd user manager, `/dev/kvm` access,
-and an existing `~/.ssh/id_ed25519` key pair. The review reports every missing tool,
-firmware file, package, key pair or access prerequisite. On Arch with pacman and pkexec, setup can install only the exact reviewed packages after your
-approval and native Polkit authorization. SSH key creation/replacement, KVM access, signing
-keyring initialization and systemd-user repairs remain manual blockers; setup never changes
-host permissions or compositor config.
+GnuPG with Omarchy's signing keyring, a working systemd user manager and `/dev/kvm` access.
+The review reports every missing tool, firmware file, package or access prerequisite. On Arch
+with pacman and pkexec, setup can install only the exact reviewed packages after your
+approval and native Polkit authorization. KVM access, signing keyring initialization and
+systemd-user repairs remain manual blockers; setup never changes host permissions or
+compositor config.
+
+Realms creates its own SSH key in its data directory, so your personal `~/.ssh` key never
+enters a VM. Bases built before this keep working with the key they were built with.
 The pinned vendored `omarchy-vm` installs the exact reviewed release from Omarchy's
 GPG-verified ISO (signer `40DFB630FF42BCFFB047046CF0134EE680CAC571`). Its digest is
 checked before every invocation; see [vendor provenance](runtime/t3realms/vendor/VENDOR.md).
@@ -115,6 +136,19 @@ Transfers are limited to 8 GiB of archive data and 100,000 entries. Copies are n
 inspect partial work after interruption. Export changed guest work into a fresh location
 and reconcile it with your ordinary host project.
 
+## Removing what Realms installed
+
+The **Installed** section of the Realms page lists the driver, the Omarchy VM, workspaces and
+any system packages Realms added, with their sizes. **Remove** refuses while work is running,
+the driver while a Realm runs, and the Omarchy VM while any VM workspace files exist, because
+those disks depend on its base. **Remove everything** deletes all stopped workspaces, then the VM
+and driver, after you type `remove everything`. It runs in the background, so it finishes even
+if the page closes. Anything it can't delete is reported and kept, and running it again carries on.
+
+Use it before removing the plugin: T3 Code has no uninstall hook for plugins and can't stop
+VMs or clean up after them. System packages stay, because other programs may use them; the
+list shows the `pacman` command to remove them.
+
 ## Sharing between agents
 
 A Realm belongs to an owner thread. Verified subagents, including nested subagents, share
@@ -125,7 +159,7 @@ lineage gets a retryable refusal instead of allocating a separate Realm. Retry s
 two seconds and ask the person to inspect lineage if it remains unresolved. The plugin uses only host-verified
 caller/target lineage, never a parent or owner id from the request.
 A person using a T3 client operates the environment and can manage any thread's Realm.
-Setup, deleting workspaces and taking control always need a person. Subagents should omit
+System packages, deleting workspaces and taking control always need a person. Subagents should omit
 thread overrides or use their own caller thread; ownership selects the parent automatically.
 Coordinate parallel subagents: they share one screen, and lifecycle changes affect everyone.
 
@@ -155,12 +189,12 @@ zoom region. Results stay below the host's 128 KB JSON limit and each image belo
 | `/realm on/off/stop/status/size/repair/shot` | `realm` action and the Realm panel. |
 | `terminal(target="realm")` | `realm-terminal` action. Native provider shells are not redirected. |
 | `computer_use` routed to the Realm | `realm-computer` action (pinned cua-driver over MCP, contained with bubblewrap). Provider-native computer tools are not redirected. |
-| Setup consent, progress and cancel | Exact reviewed plan; detached cancellable setup, including supported Arch packages through native Polkit authorization. |
+| Setup consent, progress and cancel | Plugin-local parts install themselves; host changes need a person, shown as a chat card. Detached cancellable setup, including supported Arch packages through native Polkit authorization. |
 | Off vs stop, retained workspaces, typed delete | Supported. |
 | View-only watch | Periodic captures through the T3 connection, so it works remotely. Not a VNC stream. |
 | Human takeover with agent exclusion | Supported through the Realm's private VNC socket on the server; input travels over the T3 connection. |
 | Session badges / footer item | Thread status contribution. |
 | Omarchy VM kind, push/pull | Supported by the backend: per-thread overlays, guest SSH/CUA, explicit conflict-safe transfers. |
 | Sub-agents sharing the parent's Realm | Supported when the host supplies verified subagent lineage; nested subagents share, forks remain separate. |
-| Setup continuation (resume the agent after setup) | One retry prompt to the requesting thread after person-approved successful setup, subject to the project’s `threads.send` grant. No old command is replayed. |
+| Setup continuation (resume the agent after setup) | One retry prompt to the requesting thread after successful setup, subject to the project’s `threads.send` grant. No old command is replayed. |
 | Legacy permission review | Not applicable: there are no earlier T3 Realms. |

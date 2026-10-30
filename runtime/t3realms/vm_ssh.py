@@ -6,12 +6,38 @@ import stat
 import subprocess
 import time
 
-from .lifecycle import OwnershipError, scope_info
+from .config import private_directory, vm_data_path
+from .lifecycle import OwnershipError, SetupRequired, scope_info
+
+
+def identity_home(home):
+    """The vendored installer reads $HOME/.ssh, so this is the HOME it runs with."""
+    return vm_data_path(home) / "identity"
+
+
+def ensure_identity(home):
+    """Realms' own guest key; personal SSH keys never enter a VM."""
+    private_directory(vm_data_path(home))
+    root = private_directory(identity_home(home))
+    key = private_directory(root / ".ssh") / "id_ed25519"
+    if key.exists() and key.with_suffix(".pub").exists():
+        return key
+    if key.exists() or key.with_suffix(".pub").exists():
+        raise OwnershipError("Realms SSH identity is incomplete; remove the Omarchy VM and prepare it again")
+    try:
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "t3code-realms", "-f", str(key)],
+                       check=True, capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SetupRequired("Could not create the Realms SSH identity with ssh-keygen") from exc
+    return key
 
 
 def ssh_options(record, *, enroll=False):
+    # Bases from before Realms had its own key authorize the person's key instead.
+    identities = [path for path in (identity_home(record["home"]) / ".ssh" / "id_ed25519" if record.get("home") else None,
+                                    Path.home() / ".ssh" / "id_ed25519") if path is not None]
     return [
-        "-F", "/dev/null", "-i", str(Path.home() / ".ssh" / "id_ed25519"),
+        "-F", "/dev/null", *[option for path in identities for option in ("-i", str(path))],
         "-o", "ConnectTimeout=5",
         "-o", "StrictHostKeyChecking=" + ("accept-new" if enroll else "yes"),
         "-o", "UserKnownHostsFile=" + str(Path(record["runtime_dir"]) / "ssh_known_hosts"),

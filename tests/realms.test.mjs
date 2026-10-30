@@ -113,6 +113,7 @@ async function setup(options = {}) {
     runtime,
     storage,
     sendThread: options.sendThread,
+    cards: options.cards,
     settings: { get: async () => null },
     dataDirectory,
     connectCua: () => {
@@ -949,7 +950,7 @@ for (const method of ["get", "set"]) test(`robust C8: optional continuation ${me
   const s = await robustFixture(t, { ready: false }); const original = s.storage[method];
   s.storage[method] = async (key, ...args) => { if (key === "setup-continuations-v1") throw new Error("Notification store offline"); return original(key, ...args); };
   await assert.rejects(s.realms.terminal(s.me, { command: "true" }), (error) => {
-    assert.equal(error.code, "setup_required"); assert.match(error.message, /Install labwc/); assert.match(error.message, /manually/); boundaryText(error.message); return true;
+    assert.equal(error.code, "setup_required"); assert.match(error.message, /labwc/); assert.match(error.message, /manually/); boundaryText(error.message); return true;
   });
   assert.ok(!s.runtime.state.calls.some(([command]) => command === "job_start"));
 });
@@ -1168,4 +1169,240 @@ test("native requalification: terminal transfer failures describe the failure an
     assert.equal(result.data.state, state);
   }
   assert.equal(s.runtime.state.calls.filter(([command, input]) => command === "job_start" && input.kind === "transfer").length, 0);
+});
+
+// ---- first-run setup ---------------------------------------------------------------------------
+
+/** A machine missing only plugin-local parts, unless `plan` says otherwise. */
+async function firstRun({ plan = {}, finishes = true, ...options } = {}) {
+  const s = await setup({ ready: false, ...options });
+  const original = s.runtime.call;
+  s.runtime.call = async (command, input, ...rest) => {
+    if (command === "setup_plan")
+      return { kind: input.config.kind ?? "realm", ready: s.runtime.state.ready, missing: [], blockers: [], packages: [], reviewId: "plan-1", halt: s.halt ?? null, ...plan };
+    if (command === "vm_download") return { bytes: 2 * 1024 ** 3, estimatedBytes: 5 * 1024 ** 3 };
+    const result = await original(command, input, ...rest);
+    if (command === "job_start" && input.input?.unattended) {
+      const job = s.runtime.state.jobs.get(result.job_id);
+      job.state = finishes ? "succeeded" : "running";
+      if (finishes) s.runtime.state.ready = true;
+    }
+    return result;
+  };
+  s.unattended = () => s.runtime.state.calls.filter(([command, input]) => command === "job_start" && input.input?.unattended);
+  return s;
+}
+
+test("an agent installs a missing driver and gets its Realm in the same call, with nothing to approve", async () => {
+  const sent = [];
+  const s = await firstRun({ cards: true, sendThread: async (input) => sent.push(input) });
+  const state = await s.realms.on(principal(agent("t1")), {});
+  assert.equal(state.realm.state, "live");
+  assert.equal(s.unattended().length, 1);
+  assert.equal(s.unattended()[0][1].input.review_id, "plan-1");
+  await s.realms.status(principal(client("t1")));
+  assert.equal(sent.length, 0, "the agent never stopped, so nothing resumes it");
+  assert.equal(state.continuation.length, 0);
+});
+
+test("system packages and other host changes never start unattended and show one card", async () => {
+  for (const plan of [{ packages: ["labwc"], command: "pkexec pacman" }, { blockers: ["KVM access is required"] }, { resources: { blockers: ["Insufficient free storage"] } }]) {
+    const s = await firstRun({ plan, cards: true });
+    const me = principal(agent("t1"));
+    const first = await s.realms.on(me, {}).catch((error) => error);
+    assert.equal(first.code, "setup_required");
+    assert.equal(first.card.viewId, "setup");
+    assert.deepEqual(first.card.data, { kind: "realm" });
+    const second = await s.realms.on(me, {}).catch((error) => error);
+    assert.equal(second.code, "setup_required");
+    assert.equal(second.card, undefined, "repeat calls don't repeat the card");
+    assert.equal(s.unattended().length, 0);
+  }
+});
+
+test("hosts without chat cards point to the panel instead of a card that isn't there", async () => {
+  for (const options of [{ plan: { packages: ["labwc"] } }, { plan: { halt: { state: "failed", error: "offline", job_id: "old" } } }]) {
+    const s = await firstRun(options);
+    const error = await s.realms.on(principal(agent("t1")), {}).catch((failure) => failure);
+    assert.equal(error.card, undefined);
+    assert.match(error.message, /Realm panel/);
+    assert.doesNotMatch(error.message, /card/);
+  }
+});
+
+test("a retry after failure shows the packages it would install", async () => {
+  const s = await firstRun({ plan: { packages: ["qemu-full"], command: "pkexec pacman", halt: { state: "failed", error: "changed", job_id: "old" } } });
+  const card = (await s.realms.setupState(principal(client("t1")), {})).data;
+  assert.deepEqual([card.phase, card.packages, card.command], ["failed", ["qemu-full"], "pkexec pacman"]);
+});
+
+test("an agent's on against a running Realm settles its pending resume", async () => {
+  const sent = [];
+  const s = await firstRun({ finishes: false, sendThread: async (input) => sent.push(input) });
+  const me = principal(agent("t1"));
+  await rejects(s.realms.on(me, {}), "preparing");
+  s.runtime.state.ready = true;
+  const job = [...s.runtime.state.jobs.values()].find((entry) => entry.kind === "setup");
+  job.state = "succeeded";
+  await s.realms.on(me, {});
+  await s.realms.on(me, {});
+  await s.realms.status(principal(client("t1")));
+  assert.equal(sent.length, 0);
+});
+
+test("turning automatic installs off leaves the install to a person", async () => {
+  const s = await firstRun({ cards: true });
+  const person = principal(client());
+  await rejects(s.realms.setAutoInstall(principal(agent("t1")), { enabled: true }), "ownership");
+  await s.realms.setAutoInstall(person, { enabled: false });
+  await rejects(s.realms.on(principal(agent("t1")), {}), "setup_required");
+  assert.equal(s.unattended().length, 0);
+  assert.equal((await s.realms.setupState(person, {})).data.phase, "approve");
+  await s.realms.setAutoInstall(person, { enabled: true });
+  assert.equal((await s.realms.on(principal(agent("t1")), {})).realm.state, "live");
+});
+
+test("a person's cancel and a failure stay stopped until a person retries", async () => {
+  for (const state of ["cancelled", "failed"]) {
+    const s = await firstRun({ cards: true });
+    s.halt = { state, error: "offline", job_id: "old" };
+    await rejects(s.realms.on(principal(agent("t1")), {}), "setup_required");
+    assert.equal(s.unattended().length, 0);
+    const card = (await s.realms.setupState(principal(client("t1")), {})).data;
+    assert.equal(card.phase, state);
+    assert.equal(card.reviewId, "plan-1");
+  }
+});
+
+test("a dead job's failure counts before the agent decides to install", async () => {
+  const s = await firstRun({ cards: true });
+  const original = s.runtime.call;
+  s.runtime.call = async (command, input, ...rest) => {
+    // Listing reconciles a dead job, which is what publishes its halt.
+    if (command === "job_list") s.halt = { state: "failed", error: "interrupted", job_id: "dead" };
+    return original(command, input, ...rest);
+  };
+  await rejects(s.realms.on(principal(agent("t1")), {}), "setup_required");
+  assert.equal(s.unattended().length, 0);
+});
+
+test("Agent Off stops unattended installs", async () => {
+  const s = await firstRun();
+  await s.realms.off(principal(client("t1")));
+  await rejects(s.realms.on(principal(agent("t1")), {}), "disabled");
+  assert.equal(s.unattended().length, 0);
+});
+
+test("the VM prepares in the background, survives a switch to Desktop and resumes the agent once", async () => {
+  const sent = [];
+  const s = await firstRun({ finishes: false, cards: true, sendThread: async (input) => sent.push(input) });
+  const me = principal(agent("t1"));
+  const person = principal(client("t1"));
+  const first = await s.realms.on(me, { kind: "omarchy-vm" }).catch((error) => error);
+  assert.equal(first.code, "preparing");
+  assert.equal(first.card.viewId, "setup");
+  assert.deepEqual(first.card.data, { kind: "omarchy-vm" });
+  const again = await s.realms.on(me, { kind: "omarchy-vm" }).catch((error) => error);
+  assert.equal(again.code, "preparing");
+  assert.equal(again.card, undefined);
+  assert.equal(s.unattended().length, 1, "a second call attaches to the running job");
+  assert.equal((await s.realms.badge(person)).label, "Preparing");
+  assert.ok((await s.realms.status(me)).setup.job);
+  const card = (await s.realms.setupState(person, { kind: "omarchy-vm" })).data;
+  assert.equal(card.phase, "installing");
+
+  // Desktop is ready while the VM isn't, so the agent carries on there.
+  const job = s.unattended()[0];
+  const original = s.runtime.call;
+  s.runtime.call = async (command, input, ...rest) => {
+    if (command === "doctor") return { ready: input.config.kind !== "omarchy-vm" || s.vmReady === true, missing: [], message: "x", driver: { verified: true } };
+    if (command === "setup_plan" && input.config.kind === "omarchy-vm") return { kind: "omarchy-vm", ready: s.vmReady === true, missing: [], blockers: [], packages: [], reviewId: "plan-1" };
+    return original(command, input, ...rest);
+  };
+  assert.equal((await s.realms.on(me, { kind: "realm" })).realm.state, "live");
+  assert.ok(job);
+  s.vmReady = true;
+  [...s.runtime.state.jobs.values()].find((entry) => entry.kind === "vm_setup").state = "succeeded";
+  await s.realms.status(person);
+  await s.realms.status(person);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Omarchy VM setup succeeded/);
+  assert.match(sent[0].text, /kind "omarchy-vm"/);
+  assert.match(sent[0].text, /Do not replay/);
+});
+
+test("Off still revokes an unattended install's resume", async () => {
+  const sent = [];
+  const s = await firstRun({ finishes: false, sendThread: async (input) => sent.push(input) });
+  const me = principal(agent("t1"));
+  await rejects(s.realms.on(me, { kind: "omarchy-vm" }), "preparing");
+  await s.realms.off(principal(client("t1")));
+  s.runtime.state.ready = true;
+  [...s.runtime.state.jobs.values()].find((entry) => entry.kind === "vm_setup").state = "succeeded";
+  await s.realms.status(principal(client("t1")));
+  assert.equal(sent.length, 0);
+});
+
+test("a blocked resume explains itself and offers a way on, and only after setup", async () => {
+  const denied = Object.assign(new Error("no"), { reason: "permission_denied" });
+  const s = await firstRun({ finishes: false, sendThread: async () => { throw denied; } });
+  const me = principal(agent("t1"));
+  const person = principal(client("t1"));
+  await rejects(s.realms.on(me, { kind: "omarchy-vm" }), "preparing");
+  assert.equal((await s.realms.status(person)).continuation.filter((entry) => entry.manualContinuationRequired).length, 0);
+  s.runtime.state.ready = true;
+  [...s.runtime.state.jobs.values()].find((entry) => entry.kind === "vm_setup").state = "succeeded";
+  const card = (await s.realms.setupState(person, { kind: "omarchy-vm" })).data;
+  assert.equal(card.phase, "ready");
+  assert.equal(card.resumeBlocked, true);
+  assert.match(card.resumeMessage, /Settings → Plugins/);
+  const nudge = await s.realms.continueAgent(person);
+  assert.equal(nudge.data.sent, false);
+  assert.match(nudge.data.text, /continue/);
+  assert.equal(nudge.intents, undefined, "cards have no composer");
+  assert.equal((await s.realms.setupState(person, { kind: "omarchy-vm" })).data.resumeBlocked, true, "a refused message settles nothing");
+  await rejects(s.realms.continueAgent(me), "ownership");
+});
+
+test("the card reports packages for a person's reviewed install", async () => {
+  const s = await firstRun({ plan: { packages: ["qemu-full"], command: "pkexec pacman", reviewId: "plan-2" } });
+  const person = principal(client("t1"));
+  const card = (await s.realms.setupState(person, {})).data;
+  assert.deepEqual([card.phase, card.packages, card.command, card.reviewId], ["packages", ["qemu-full"], "pkexec pacman", "plan-2"]);
+  await rejects(s.realms.setupState(principal(agent("t1")), {}), "ownership");
+  await assert.rejects(s.realms.setupState(person, { kind: "other" }), /kind must be/);
+});
+
+test("Use Desktop instead switches the thread and tells the agent", async () => {
+  const sent = [];
+  const s = await firstRun({ plan: { packages: ["qemu-full"] }, sendThread: async (input) => sent.push(input) });
+  const person = principal(client("t1"));
+  await rejects(s.realms.on(principal(agent("t1")), { kind: "omarchy-vm" }), "setup_required");
+  await s.realms.useDesktop(person, {});
+  assert.equal((await s.realms.status(person)).kind, "realm");
+  assert.match(sent[0].text, /Desktop Realm/);
+});
+
+test("removal is a person's: components, and everything only after typing it", async () => {
+  const s = await setup();
+  const person = principal(client());
+  const me = principal(agent("t1"));
+  const original = s.runtime.call;
+  s.runtime.call = async (command, input, ...rest) => {
+    if (command === "components") return { driver: { present: true } };
+    if (command === "component_remove") return {};
+    return original(command, input, ...rest);
+  };
+  await rejects(s.realms.components(me), "ownership");
+  await rejects(s.realms.removeComponent(me, { component: "driver" }), "ownership");
+  await rejects(s.realms.removeEverything(me, { phrase: "remove everything" }), "ownership");
+  await rejects(s.realms.removeComponent(person, { component: "other" }), "invalid_input");
+  assert.equal((await s.realms.components(person)).data.autoInstall, true);
+  await rejects(s.realms.removeEverything(person, { phrase: "yes" }), "invalid_input");
+  await s.realms.on(me, {});
+  await rejects(s.realms.removeEverything(person, { phrase: "remove everything" }), "busy");
+  await s.realms.stop(principal(client("t1")));
+  const result = await s.realms.removeEverything(person, { phrase: "remove everything" });
+  assert.ok(s.runtime.state.jobs.get(result.data.jobId), "large machines outlast a host call, so this is a job");
+  assert.equal(s.runtime.state.jobs.get(result.data.jobId).kind, "teardown");
 });

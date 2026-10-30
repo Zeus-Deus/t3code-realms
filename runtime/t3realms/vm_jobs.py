@@ -6,7 +6,8 @@ from .lifecycle import OwnershipError
 
 def validate_input(home, kind, owner, payload):
     if kind == 'vm_setup':
-        if set(payload) != {'config', 'review_id'} or not isinstance(payload['review_id'], str): raise ValueError('VM setup requires its reviewed plan')
+        from .setup_worker import validate_setup_input
+        validate_setup_input(payload)
         if Config.from_object(payload['config']).kind != 'omarchy-vm': raise ValueError('VM setup requires kind omarchy-vm')
         return
     validate_owner(owner)

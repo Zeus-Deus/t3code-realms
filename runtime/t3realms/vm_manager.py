@@ -228,7 +228,7 @@ class VmManager:
 
 
     def _run_script(self, arguments, *, vm_home, ssh_port=None, unit=None,
-                    runtime=None, timeout=120, check=True, stdout=None, setup_job=None, before_start=None, config=None):
+                    runtime=None, timeout=120, check=True, stdout=None, setup_job=None, before_start=None, config=None, identity=False):
         script = self.script(config=config)
         if script == VENDORED_SCRIPT:
             import hashlib
@@ -237,6 +237,9 @@ class VmManager:
             if digest != VENDORED_SHA256:
                 raise VmError("vendored omarchy-vm script does not match its pin")
         env = self._script_env(vm_home=vm_home, ssh_port=ssh_port, unit=unit, runtime=runtime, config=config)
+        if identity:
+            from .vm_ssh import identity_home
+            env['HOME'] = str(identity_home(self.home))
         if before_start is not None:
             before_start()
         return subprocess.run(
@@ -903,7 +906,7 @@ class VmManager:
                 self.registry.put(current)
             self._run_script(['launch'], vm_home=record['session_dir'], ssh_port=record['ssh_port'],
                              unit=record['unit'], runtime=runtime, config=frozen,
-                             timeout=frozen.vm.boot_timeout + 30)
+                             timeout=frozen.vm.boot_timeout + 30, identity=self._plugin_identity(record))
             with self.registry.lock(): record = self._starting(record)
             enroll_host_key(record)
             record = self._retain_startup_pin(record)
@@ -923,6 +926,14 @@ class VmManager:
             raise
         finally:
             self.operation = None
+
+    @staticmethod
+    def _plugin_identity(record):
+        from .vm_base import read_json
+        try:
+            return read_json(Path(record['base_disk']).parent / 'base.json').get('ssh_identity') == 'plugin'
+        except (OSError, ValueError, OwnershipError):
+            return False
 
     def _starting(self, expected):
         current = self.registry.get(expected['id'])

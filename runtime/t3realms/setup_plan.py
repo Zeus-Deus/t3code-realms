@@ -38,7 +38,7 @@ PACKAGES = {
     'dbus-daemon': 'dbus', 'gdbus': 'glib2', 'grim': 'grim', 'wlr-randr': 'wlr-randr',
     'bwrap': 'bubblewrap', 'at-spi-bus-launcher': 'at-spi2-core', 'at-spi2-registryd': 'at-spi2-core',
     'systemd-run': 'systemd', 'systemd-inhibit': 'systemd', 'systemctl': 'systemd',
-    'qemu-system-x86_64': 'qemu-full', 'qemu-img': 'qemu-full', 'ssh': 'openssh', 'scp': 'openssh',
+    'qemu-system-x86_64': 'qemu-full', 'qemu-img': 'qemu-full', 'ssh': 'openssh', 'scp': 'openssh', 'ssh-keygen': 'openssh',
     'socat': 'socat', 'jq': 'jq', 'mcopy': 'mtools', 'mformat': 'mtools', 'openssl': 'openssl',
     'curl': 'curl', 'gpg': 'gnupg', 'qemu-full': 'qemu-full', 'edk2-ovmf': 'edk2-ovmf', 'mtools': 'mtools',
     '/usr/share/edk2/x64/OVMF_CODE.4m.fd': 'edk2-ovmf', '/usr/share/edk2/x64/OVMF_VARS.4m.fd': 'edk2-ovmf',
@@ -56,7 +56,6 @@ def package_plan(missing):
     instructions = {
         'systemd_user': 'A working systemd user manager is required; repair your login session before retrying',
         '/dev/kvm read/write access (no permissions are changed)': 'KVM access is required; enable virtualization and ask your administrator to grant your user access, then log in again. Setup never changes /dev/kvm permissions',
-        'existing ~/.ssh/id_ed25519 key pair (never created or replaced)': 'Prepare an SSH id_ed25519 key pair yourself before retrying; setup never creates, replaces or modifies host keys',
         'Omarchy signing keyring /etc/pacman.d/gnupg': 'Initialize and verify the Omarchy signing keyring at /etc/pacman.d/gnupg through your administrator before retrying',
     }
     blockers = [instructions.get(name, name) for name in dict.fromkeys(missing) if name not in PACKAGES]

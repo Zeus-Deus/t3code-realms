@@ -1,4 +1,4 @@
-"""Reviewed VM setup; only person-approved packages/downloads, never host key changes."""
+"""Reviewed VM setup; never touches host keys, and only a person can approve packages."""
 from dataclasses import asdict
 import hashlib
 import json
@@ -16,7 +16,7 @@ from .setup_plan import confined, base_present
 
 MIB = 1024**2
 GIB = 1024**3
-TOOLS = ('qemu-system-x86_64', 'qemu-img', 'ssh', 'socat', 'jq', 'mcopy', 'mformat',
+TOOLS = ('qemu-system-x86_64', 'qemu-img', 'ssh', 'ssh-keygen', 'socat', 'jq', 'mcopy', 'mformat',
          'openssl', 'systemd-run', 'systemd-inhibit', 'systemctl', 'curl', 'gpg', 'pacman')
 FIRMWARE = ('/usr/share/edk2/x64/OVMF_CODE.4m.fd', '/usr/share/edk2/x64/OVMF_VARS.4m.fd')
 SIGNER = '40DFB630FF42BCFFB047046CF0134EE680CAC571'
@@ -56,8 +56,6 @@ def doctor(home, config):
         if not any(Path('/var/lib/pacman/local').glob(package + '-[0-9]*')): missing.append(package)
     if sys.platform != 'linux' or platform.machine() not in ('x86_64', 'AMD64'): missing.append('Linux x86-64')
     if not os.access('/dev/kvm', os.R_OK | os.W_OK): missing.append('/dev/kvm read/write access (no permissions are changed)')
-    key = Path.home() / '.ssh/id_ed25519'
-    if not key.is_file() or not key.with_suffix('.pub').is_file(): missing.append('existing ~/.ssh/id_ed25519 key pair (never created or replaced)')
     user_manager = False
     if tools['systemctl']:
         try:
@@ -105,7 +103,7 @@ def plan(home, config):
                                    'destination': value['driver']['destination']})
     from .setup_plan import package_plan, bind_review
     value.update(package_plan(value['missing']))
-    return bind_review(value)
+    return dict(bind_review(value), resources={'blockers': [] if base['present'] else resources(config, vm_data_path(home), install=True)['blockers']})
 
 
 def install_base(vm, *, progress=None, job_id=None):
@@ -116,6 +114,8 @@ def install_base(vm, *, progress=None, job_id=None):
     from .vm_base import sync_assets
     require_resources(vm.config, vm.home, install=True)
     private_directory(vm.data); private_directory(vm.data / 'iso')
+    from .vm_ssh import ensure_identity
+    ensure_identity(vm.home)
     with pinned_runtime(vm.home) as runtime_copy, vm.registry.lock():
         if vm.base_status()['present']: return vm.base_status()
         base = confined(vm.home, vm.data / 'base')
@@ -143,7 +143,7 @@ def install_base(vm, *, progress=None, job_id=None):
         # Installer output is a private bounded-by-duration job log, not a plugin result.
         vm._run_script(['install', '--version', vm.config.vm.release], vm_home=session,
                        ssh_port=record['ssh_port'], unit=record['unit'], runtime=runtime, timeout=5400,
-                       stdout=sys.stdout)
+                       stdout=sys.stdout, identity=True)
         with vm.registry.lock(): record = vm._starting(record)
         enroll_host_key(record)
         shutdown_guest(record, vm.ssh_argv(record))
@@ -153,7 +153,7 @@ def install_base(vm, *, progress=None, job_id=None):
             sync_assets(session)
             atomic_json(session / 'base.json', {'built_at': time.time(), 'generation': generation,
                                                'iso': f'omarchy-{vm.config.vm.release}.iso', 'home': str(vm.home),
-                                               'uid': os.getuid()})
+                                               'uid': os.getuid(), 'ssh_identity': 'plugin'})
             if base.exists(): raise OwnershipError('Base appeared during installation; refusing replacement')
             session.rename(base); published = True
             vm.registry.remove(record['id'])

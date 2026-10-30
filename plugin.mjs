@@ -22,6 +22,9 @@ const run = (task) => async (input, invocation) => {
       throw new RealmError("result_too_large", "This Realm result exceeded the host limit and was withheld. Inspect status or request smaller output/a smaller capture; do not replay uncertain input.");
     return result;
   } catch (error) {
+    // Setup that needs a person is a result, because only results can carry a chat card.
+    if (error instanceof RealmError && error.card && invocation?.caller?.kind === "agent")
+      return { message: `[${error.code}] ${error.message}`, data: { code: error.code }, card: error.card };
     throw failure(error);
   }
 };
@@ -52,6 +55,7 @@ export async function activate(ctx) {
       }),
     connectRfb,
     sendThread: ctx.threads?.send ? (input) => ctx.threads.send(input) : undefined,
+    cards: ["ui", "ui.conversation-cards"].every((capability) => ctx.capabilities?.includes(capability)),
   });
   ctx.signal.addEventListener("abort", () => realms?.dispose(), { once: true });
 
@@ -133,6 +137,18 @@ export async function activate(ctx) {
   view("job-cancel", (who, input, opts) => realms.jobCancel(who, input, opts));
   view("open-realms", async () => ({ intents: [{ type: "view.open", viewId: "realms" }] }));
 
+  // The setup card in a conversation.
+  const card = (name, task) =>
+    ctx.handle(
+      `view:setup:${name}`,
+      run(async (input, invocation) => task(principal(invocation, input), input, options(invocation))),
+    );
+  card("state", (who, input, opts) => realms.setupState(who, input, opts));
+  card("start", (who, input, opts) => realms.setupStart(who, input, opts));
+  card("cancel", (who, input, opts) => realms.jobCancel(who, input, opts));
+  card("continue", (who, input) => realms.continueAgent(who, input));
+  card("use-desktop", (who, input, opts) => realms.useDesktop(who, input, opts));
+
   // The environment-wide Realms page.
   const page = (name, task) =>
     ctx.handle(
@@ -149,6 +165,10 @@ export async function activate(ctx) {
   page("job-cancel", (who, input, opts) => realms.jobCancel(who, input, opts));
   page("prune-review", (who, input, opts) => realms.pruneReview(who, input, opts));
   page("prune", (who, input, opts) => realms.pruneRecovery(who, input, opts));
+  page("components", (who, input, opts) => realms.components(who, input, opts));
+  page("auto-install", (who, input) => realms.setAutoInstall(who, input));
+  page("component-remove", (who, input, opts) => realms.removeComponent(who, input, opts));
+  page("remove-everything", (who, input, opts) => realms.removeEverything(who, input, opts));
   page("reveal", async (who, input) => {
     if (who.kind !== "user" || typeof input.threadId !== "string") throw new RealmError("invalid_input", "Choose a thread.");
     return { intents: [{ type: "thread.reveal", threadId: input.threadId }] };

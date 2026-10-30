@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Realm setup</title>
+    <style>
+      /* T3 Code applies its theme through the plugin bridge; the host sizes the frame to this page. */
+      :root {
+        --bg: var(--color-background-primary, #ffffff);
+        --surface: var(--color-background-secondary, #f6f6f7);
+        --fg: var(--color-text-primary, #111113);
+        --muted: var(--color-text-secondary, #5f5f68);
+        --border: var(--color-border-primary, #e3e3e6);
+        --input: var(--color-border-secondary, #d6d6da);
+        --ring: var(--color-ring-primary, #6b6bff);
+        --danger: var(--color-text-danger, #b42318);
+        --radius: var(--border-radius-md, 8px);
+        --font: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+        --mono: var(--font-mono, ui-monospace, monospace);
+        color-scheme: light dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.45 var(--font);
+      }
+      main {
+        padding: 11px 12px;
+      }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      p,
+      .meta {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      .meta {
+        margin: 0;
+        white-space: nowrap;
+      }
+      p.error {
+        color: var(--danger);
+      }
+      ul {
+        margin: 4px 0 0;
+        padding-left: 16px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      code {
+        display: block;
+        margin-top: 6px;
+        font: 11px/1.4 var(--mono);
+        overflow-wrap: anywhere;
+      }
+      .bar {
+        height: 5px;
+        margin: 9px 0 7px;
+        overflow: hidden;
+        border-radius: 3px;
+        background: var(--border);
+      }
+      .bar i {
+        display: block;
+        height: 100%;
+        border-radius: 3px;
+        background: var(--fg);
+        transition: width 0.4s;
+      }
+      .bar.working i {
+        width: 30%;
+        animation: slide 1.6s ease-in-out infinite alternate;
+      }
+      @keyframes slide {
+        to {
+          transform: translateX(233%);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .bar.working i {
+          width: 100%;
+          opacity: 0.4;
+          animation: none;
+        }
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 9px;
+      }
+      button {
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid var(--input);
+        border-radius: calc(var(--radius) - 2px);
+        background: transparent;
+        color: var(--fg);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      button:hover:not(:disabled) {
+        background: var(--surface);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button:focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 1px;
+      }
+      button.primary {
+        border-color: var(--fg);
+        background: var(--fg);
+        color: var(--bg);
+      }
+      button.primary:hover:not(:disabled) {
+        background: var(--fg);
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="card" aria-live="polite"><p>Checking setup…</p></main>
+    <script>
+      (function () {
+        "use strict";
+        var bridge = window.t3;
+        var card = document.getElementById("card");
+        var POLL_MS = 2000;
+        var GIB = 1024 * 1024 * 1024;
+        var state = null;
+        var kind = "realm";
+        var busy = false;
+        var error = null;
+        var showCommand = false;
+        var manualText = null;
+        var timer = null;
+
+        function el(tag, attrs, children) {
+          var node = document.createElement(tag);
+          for (var key in attrs || {}) {
+            if (key === "text") node.textContent = attrs[key];
+            else if (key === "onclick") node.addEventListener("click", attrs[key]);
+            else if (key === "disabled") node.disabled = Boolean(attrs[key]);
+            else node.setAttribute(key, attrs[key]);
+          }
+          (children || []).forEach(function (child) {
+            if (child) node.appendChild(child);
+          });
+          return node;
+        }
+        function failureText(failure) {
+          return String((failure && failure.message) || "Request failed.").replace(/^\[[a-z_]+\]\s*/, "");
+        }
+        function button(text, action, primary) {
+          return el("button", { type: "button", class: primary ? "primary" : "", text: text, disabled: busy, onclick: action });
+        }
+        function act(name, payload) {
+          busy = true;
+          error = null;
+          render();
+          return bridge
+            .invoke(name, payload)
+            .then(function (result) {
+              manualText = result && result.data && result.data.sent === false ? result.data.text : null;
+            })
+            .catch(function (failure) {
+              error = failureText(failure);
+            })
+            .then(function () {
+              busy = false;
+              return refresh();
+            });
+        }
+        function install() {
+          return act("start", { kind: kind, reviewId: state.reviewId });
+        }
+        function bytes(value) {
+          return (value / GIB).toFixed(1);
+        }
+        var STAGES = {
+          preparing: "Getting ready",
+          downloading: "Downloading the GUI driver",
+          verifying: "Verifying the download",
+          installing: "Installing Omarchy",
+          launched: "Installing Omarchy",
+          packages: "Installing system packages",
+        };
+
+        function installing() {
+          var download = state.download;
+          var fraction = download && download.estimatedBytes ? Math.min(download.bytes / download.estimatedBytes, 0.99) : 0;
+          var fetching = download && fraction < 0.99;
+          var vm = kind === "omarchy-vm";
+          var head = el("div", { class: "head" }, [
+            el("h1", { text: "Preparing " + state.label }),
+            vm ? el("span", { class: "meta", text: "15–30 min" }) : null,
+          ]);
+          var bar = el("div", { class: fetching ? "bar" : "bar working" }, [
+            el("i", fetching ? { style: "width:" + Math.round(fraction * 100) + "%" } : {}),
+          ]);
+          var line = fetching
+            ? bytes(download.bytes) + " of about " + bytes(download.estimatedBytes) + " GiB downloaded"
+            : state.message || STAGES[state.stage] || "Working";
+          return [head, bar, el("p", { text: line }),
+            el("p", { text: vm ? "The agent can keep working and picks this up when it's ready." : "This takes a moment." }),
+            el("div", { class: "actions" }, [button("Cancel", function () { act("cancel", { jobId: state.jobId }); })])];
+        }
+
+        function content() {
+          var useDesktop = kind === "omarchy-vm" ? button("Use Desktop instead", function () { act("use-desktop", {}); }) : null;
+          switch (state.phase) {
+            case "ready":
+              return [
+                el("h1", { text: state.label + " is ready" }),
+                el("p", { text: state.resumeBlocked ? state.resumeMessage : "The agent can use it now." }),
+                state.resumeBlocked ? el("div", { class: "actions" }, [button("Continue agent", function () { act("continue", {}); }, true)]) : null,
+              ];
+            case "installing":
+              return installing();
+            case "blocked":
+              return [
+                el("h1", { text: state.label + " can't be set up yet" }),
+                el("p", { text: "Fix this on the machine running T3 Code, then check again." }),
+                el("ul", {}, state.blockers.map(function (blocker) { return el("li", { text: blocker }); })),
+                el("div", { class: "actions" }, [button("Check again", function () { refresh(); }), useDesktop]),
+              ];
+            case "packages":
+              return [
+                el("h1", { text: "Install " + state.packages.length + (state.packages.length === 1 ? " system package" : " system packages") }),
+                el("p", { text: state.packages.join(", ") + ". Your system will ask for your password." }),
+                showCommand && state.command ? el("code", { text: state.command }) : null,
+                el("div", { class: "actions" }, [
+                  button("Install", install, true),
+                  state.command ? button(showCommand ? "Hide command" : "Show command", function () { showCommand = !showCommand; render(); }) : null,
+                  useDesktop,
+                ]),
+              ];
+            case "failed":
+            case "cancelled":
+              return [
+                el("h1", { text: state.label + (state.phase === "failed" ? " setup failed" : " setup was cancelled") }),
+                state.error ? el("p", { class: "error", text: state.error }) : null,
+                state.packages.length
+                  ? el("p", { text: "Trying again installs " + state.packages.join(", ") + ". Your system will ask for your password." })
+                  : null,
+                state.packages.length && state.command ? el("code", { text: state.command }) : null,
+                el("div", { class: "actions" }, [button("Try again", install, true), useDesktop]),
+              ];
+            default:
+              return [
+                el("h1", { text: "Install the " + state.label + "?" }),
+                el("p", { text: kind === "omarchy-vm" ? "About a 5 GiB download and a 15–30 minute install." : "Downloads the pinned GUI driver." }),
+                el("div", { class: "actions" }, [button("Install", install, true), useDesktop]),
+              ];
+          }
+        }
+
+        function render() {
+          var nodes = state ? content() : [el("p", { text: "Checking setup…" })];
+          if (error) nodes.push(el("p", { class: "error", text: error }));
+          if (manualText) nodes.push(el("p", { text: "Realms can't message this thread. Send the agent this:" }), el("code", { text: manualText }));
+          card.replaceChildren.apply(card, nodes.filter(Boolean));
+        }
+
+        function refresh() {
+          clearTimeout(timer);
+          return bridge.invoke("state", { kind: kind }).then(
+            function (result) {
+              state = result.data;
+              render();
+              schedule();
+            },
+            function (failure) {
+              error = failureText(failure);
+              render();
+              schedule();
+            },
+          );
+        }
+        // Polling is what resumes the agent, so it only stops once nothing can change on its own.
+        function schedule() {
+          if (document.visibilityState === "visible" && state && state.phase === "installing") timer = setTimeout(refresh, POLL_MS);
+        }
+        document.addEventListener("visibilitychange", function () {
+          if (document.visibilityState === "visible") refresh();
+          else clearTimeout(timer);
+        });
+
+        if (!bridge) {
+          card.replaceChildren(el("p", { text: "Open this card inside T3 Code." }));
+          return;
+        }
+        Promise.resolve(bridge.ready).then(function () {
+          var data = bridge.context && bridge.context.card && bridge.context.card.data;
+          if (data && data.kind === "omarchy-vm") kind = "omarchy-vm";
+          return refresh();
+        });
+      })();
+    </script>
+  </body>
+</html>

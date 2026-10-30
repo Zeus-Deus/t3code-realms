@@ -1580,8 +1580,11 @@
           var job = setup.job;
           var active = jobActive(job);
           var ready = setupReady();
-          var continuation = state.status && state.status.continuation && state.status.continuation.length > 0;
-          $("setup-section").hidden = !(active || continuation || (state.status && !ready) || (review && !review.ready));
+          // One line is enough: every entry says the same thing, and only stuck agents need one.
+          var stuck = ((state.status && state.status.continuation) || []).filter(function (item) {
+            return item.manualContinuationRequired;
+          }).slice(-1)[0];
+          $("setup-section").hidden = !(active || stuck || (state.status && !ready) || (review && !review.ready));
           var nodes = [];
           nodes.push(
             el("p", {
@@ -1635,18 +1638,7 @@
           }
           if (job && (active || (review && !review.ready)))
             nodes.push(el("p", { class: job.state === "failed" ? "error" : "hint", text: setupJobLine(job, vm) }));
-          (state.status && state.status.continuation ? state.status.continuation : []).forEach(function (item) {
-            nodes.push(
-              el("p", {
-                class: item.manualContinuationRequired ? "error" : "hint",
-                text: item.manualContinuationRequired
-                  ? "Setup finished, but the agent wasn't resumed automatically" +
-                    (item.message ? ": " + item.message : "") +
-                    ". Ask it to continue in its thread."
-                  : item.message || "The agent that needed setup was asked to continue.",
-              }),
-            );
-          });
+          if (stuck) nodes.push(el("p", { class: "hint", text: "Setup finished. " + stuck.message }));
           if (setup.error) nodes.push(el("p", { class: "error", text: setup.error }));
           var canApprove = review && !review.ready && !active && !setup.busy && systemBlockers(review).length === 0;
           nodes.push(

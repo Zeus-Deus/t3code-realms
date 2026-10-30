@@ -14,10 +14,11 @@ import uuid
 
 from .config import Config, effective_home, private_directory, validate_owner, finite_number
 from .errors import error_code
-from .lifecycle import (BusyError, NotFoundError, OwnershipError, RealmError,
+from .lifecycle import (BusyError, NotFoundError, OwnershipError, RealmError, SetupRequired,
                         alive, atomic_json, identity, private_json)
 
-KINDS = ('start', 'setup', 'driver_install', 'selftest', 'vm_setup', 'vm_driver', 'transfer')
+KINDS = ('start', 'setup', 'driver_install', 'selftest', 'vm_setup', 'vm_driver', 'transfer', 'teardown')
+EXCLUSIVE = ('setup', 'driver_install', 'vm_setup', 'teardown')
 TERMINAL = {'succeeded', 'failed', 'cancelled'}
 RETENTION_SECONDS = 86400
 RECORD_LIMIT = 200
@@ -80,6 +81,9 @@ class Jobs:
 
     def put(self, record):
         atomic_json(self.path(record['job_id']), record)
+        if record['kind'] in ('setup', 'vm_setup'):
+            from .components import note_setup
+            note_setup(self.home, record)
 
     def reconcile(self, record):
         if record['state'] not in TERMINAL and not alive(record.get('process')):
@@ -139,8 +143,8 @@ class Jobs:
                 raise ValueError('unknown start job input field')
             Config.from_object(payload.get('config', {}))
         elif kind == 'setup':
-            if set(payload) != {'config', 'review_id'} or not isinstance(payload['review_id'], str):
-                raise ValueError('Setup requires its reviewed plan')
+            from .setup_worker import validate_setup_input
+            validate_setup_input(payload)
             if Config.from_object(payload['config']).kind != 'realm':
                 raise ValueError('Regular setup requires kind realm')
         elif kind == 'driver_install':
@@ -152,6 +156,9 @@ class Jobs:
         elif kind in ('vm_setup', 'vm_driver', 'transfer'):
             from .vm_jobs import validate_input
             validate_input(self.home, kind, owner, payload)
+        elif kind == 'teardown':
+            if set(payload) - {'config'}:
+                raise ValueError('unknown teardown input field')
         else:
             seconds = payload.get('seconds', 0)
             if (not finite_number(seconds) or not 0 <= seconds <= 3600
@@ -164,11 +171,16 @@ class Jobs:
             for record in records:
                 if record['state'] in TERMINAL:
                     continue
-                if (kind in ('setup', 'driver_install', 'vm_setup') and record['kind'] in ('setup', 'driver_install', 'vm_setup')
+                if (kind in EXCLUSIVE and record['kind'] in EXCLUSIVE
                         or kind in ('start', 'vm_driver', 'transfer') and record['kind'] == kind and record['owner'] == owner):
                     raise BusyError('an operation of this kind is already active for this owner')
             if len(records) >= RECORD_LIMIT:
                 raise BusyError('job capacity reached')
+            # Checked here, after reconciling: a dead job's failure counts even if it was just found.
+            if payload.get('unattended'):
+                from .components import halted
+                if halted(self.home, 'omarchy-vm' if kind == 'vm_setup' else 'realm'):
+                    raise SetupRequired('This install failed or was cancelled; a person must retry it')
             job_id = uuid.uuid4().hex
             now = time.time()
             record = {'job_id': job_id, 'kind': kind, 'owner': owner, 'state': 'queued',
@@ -267,6 +279,9 @@ class Jobs:
                 elif record['kind'] in ('setup', 'vm_setup'):
                     from .setup_worker import run
                     result = run(self.home, record, progress)
+                elif record['kind'] == 'teardown':
+                    from .components import teardown
+                    result = teardown(self.home, payload.get('config', {}), job_id, progress)
                 elif record['kind'] == 'driver_install':
                     from .install_driver import install
                     from .diagnostics import driver_status

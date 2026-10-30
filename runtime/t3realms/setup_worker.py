@@ -1,4 +1,7 @@
-"""Person-approved setup, bound to an exact read-only proposal before any effect."""
+"""Setup bound to an exact read-only proposal before any effect.
+
+An agent's unattended job covers only plugin-local downloads: it can never reach pkexec.
+"""
 import fcntl
 import json
 import os
@@ -10,6 +13,12 @@ import sys
 from .config import Config, effective_home
 from .lifecycle import OwnershipError, BusyError, SetupRequired, host_control_env
 from .setup_plan import plan, PACKAGES, PACKAGE_PREFIX
+
+
+def validate_setup_input(payload):
+    if (set(payload) - {'unattended'} != {'config', 'review_id'} or not isinstance(payload['review_id'], str)
+            or payload.get('unattended', True) is not True):
+        raise ValueError('Setup requires its reviewed plan')
 
 
 def run_command(argv, env, lock_fd):
@@ -59,17 +68,26 @@ def run(home, job, progress):
     if payload['review_id'] != reviewed['reviewId']:
         raise OwnershipError('Setup plan changed; review it again')
     if reviewed['blockers']: raise SetupRequired('; '.join(reviewed['blockers']))
+    by = 'agent' if payload.get('unattended') else 'person'
+    if by == 'agent' and reviewed['packages']:
+        raise SetupRequired('Installing system packages needs a person')
     install_packages(home, reviewed, progress)
+    from .components import remember
+    if reviewed['packages']: remember(home, packages=reviewed['packages'])
     # Consent cannot expand to new packages discovered after installation.
     current = plan(home, config)
     if current['blockers'] or current['packages']:
         raise SetupRequired('Prerequisites remain after package setup; review setup again: ' + ', '.join(current['missing']))
     from .install_driver import install
-    if not current['driver']['installed']: install(home=home, progress=progress)
+    if not current['driver']['installed']:
+        install(home=home, progress=progress)
+        remember(home, driver={'by': by})
     if config.kind == 'omarchy-vm':
         from .vm_manager import VmManager
         vm = VmManager(home, config=payload['config'])
-        if not current['base']['present']: vm.install_base(progress=progress, job_id=job['job_id'])
+        if not current['base']['present']:
+            vm.install_base(progress=progress, job_id=job['job_id'])
+            remember(home, vm={'by': by})
         result = vm.doctor()
     else:
         from .diagnostics import doctor

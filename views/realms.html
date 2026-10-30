@@ -243,6 +243,16 @@
         border: 1px solid var(--border);
         border-radius: var(--radius);
       }
+      .check {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        margin-bottom: 10px;
+      }
+      td.right {
+        text-align: right;
+        white-space: nowrap;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
@@ -385,6 +395,10 @@
       </section>
       <div id="recovery"></div>
       <div id="list"></div>
+      <section aria-labelledby="installed-heading" id="installed-section" hidden>
+        <h2 id="installed-heading">Installed</h2>
+        <div id="installed"></div>
+      </section>
     </main>
     <script>
       (function () {
@@ -405,7 +419,7 @@
           listAgain: false,
           prune: null,
         };
-        var timers = { list: null, job: null };
+        var timers = { list: null, job: null, removal: null };
         var setup = { review: null, job: null, busy: false, error: null };
 
         function el(tag, attrs, children) {
@@ -1339,11 +1353,185 @@
           container.replaceChildren.apply(container, nodes);
         }
 
+        // ---- installed components --------------------------------------------------------
+
+        var installed = { data: null, confirm: null, phrase: "", busy: false, error: null, actionError: null, showCommand: false };
+        var REMOVE_PHRASE = "remove everything";
+
+        function formatBytes(value) {
+          if (!value) return "0 MB";
+          var mib = value / (1024 * 1024);
+          return mib >= 1024 ? (mib / 1024).toFixed(1) + " GB" : Math.max(1, Math.round(mib)) + " MB";
+        }
+        function installedNote(item) {
+          if (!item.installedBy) return "";
+          var day = new Date(item.installedAt * 1000).toLocaleDateString();
+          return " · Installed by " + (item.installedBy === "agent" ? "an agent" : "you") + " on " + day;
+        }
+        function loadInstalled() {
+          return call("components", {}).then(
+            function (result) {
+              installed.data = result.data;
+              installed.error = null;
+              renderInstalled();
+            },
+            function (error) {
+              installed.error = parseError(error).text;
+              renderInstalled();
+            },
+          );
+        }
+        function installedAction(name, payload) {
+          installed.busy = true;
+          installed.actionError = null;
+          renderInstalled();
+          return call(name, payload)
+            .then(function (result) {
+              var jobId = result.data && result.data.jobId;
+              if (jobId) return watchRemoval(jobId);
+              installed.confirm = null;
+              installed.phrase = "";
+            })
+            .catch(function (error) {
+              installed.actionError = parseError(error).text;
+            })
+            .then(function () {
+              installed.busy = false;
+              load();
+              return loadInstalled();
+            });
+        }
+        /** The removal is a detached job, so it finishes even if this page closes. */
+        function watchRemoval(jobId) {
+          return new Promise(function (resolve) { timers.removal = setTimeout(resolve, 1000); })
+            .then(function () { return call("job-status", { jobId: jobId }); })
+            .then(function (result) {
+              var job = result.data;
+              if (job.state === "queued" || job.state === "running") return watchRemoval(jobId);
+              if (job.state !== "succeeded") throw new Error(job.error || "Removal stopped.");
+              var failed = (job.result && job.result.failed) || [];
+              installed.confirm = null;
+              installed.phrase = "";
+              if (failed.length)
+                installed.actionError = failed.map(function (item) { return item.name + ": " + item.error; }).join(" ");
+            });
+        }
+        function toggleAutoInstall() {
+          installedAction("auto-install", { enabled: !installed.data.autoInstall });
+        }
+        function removeButton(component) {
+          if (installed.confirm === component)
+            return el("span", { class: "actions" }, [
+              el("button", {
+                type: "button",
+                class: "danger",
+                disabled: installed.busy,
+                text: "Confirm",
+                onclick: function () { installedAction("component-remove", { component: component }); },
+              }),
+              el("button", {
+                type: "button",
+                disabled: installed.busy,
+                text: "Keep",
+                onclick: function () { installed.confirm = null; renderInstalled(); },
+              }),
+            ]);
+          return el("button", {
+            type: "button",
+            disabled: installed.busy,
+            text: "Remove",
+            onclick: function () { installed.confirm = component; renderInstalled(); },
+          });
+        }
+        function installedRow(name, detail, action) {
+          return el("tr", {}, [el("td", { text: name }), el("td", { class: "hint", text: detail }), el("td", { class: "right" }, [action])]);
+        }
+        function renderInstalled() {
+          var data = installed.data;
+          $("installed-section").hidden = !data && !installed.error;
+          var nodes = [];
+          if (data) {
+            nodes.push(
+              el("label", { class: "check" }, [
+                el("input", { type: "checkbox", disabled: installed.busy, onclick: toggleAutoInstall }),
+                el("span", {}, [
+                  el("strong", { text: "Let agents install what they need" }),
+                  el("span", { class: "hint", text: " Turn off to approve each install yourself. System packages always ask you." }),
+                ]),
+              ]),
+            );
+            nodes[0].querySelector("input").checked = data.autoInstall;
+            var rows = [];
+            if (data.driver.present)
+              rows.push(installedRow("GUI driver " + data.driver.version, formatBytes(data.driver.bytes) + installedNote(data.driver), removeButton("driver")));
+            if (data.vm.present || data.vm.bytes)
+              rows.push(installedRow("Omarchy VM" + (data.vm.release ? " " + data.vm.release : ""), "Base disk and installer · " + formatBytes(data.vm.bytes) + installedNote(data.vm), removeButton("vm")));
+            if (data.workspaces.count)
+              rows.push(installedRow("Realm workspaces", data.workspaces.count + " · " + formatBytes(data.workspaces.bytes) + " · Delete them in the list above", null));
+            if (data.packages.names.length)
+              rows.push(
+                installedRow(
+                  "System packages",
+                  data.packages.names.join(", ") + " · Added through pacman and kept when you remove Realms",
+                  el("button", {
+                    type: "button",
+                    text: installed.showCommand ? "Hide command" : "Show command",
+                    onclick: function () { installed.showCommand = !installed.showCommand; renderInstalled(); },
+                  }),
+                ),
+              );
+            nodes.push(rows.length ? el("table", {}, [el("tbody", {}, rows)]) : el("p", { class: "hint", text: "Nothing installed yet. Agents add what they need the first time they use a Realm." }));
+            if (installed.showCommand && data.packages.removeCommand) nodes.push(el("code", { class: "mono", text: data.packages.removeCommand }));
+            if (rows.length) {
+              if (installed.confirm === "everything") {
+                var confirm = el("button", {
+                  type: "button",
+                  class: "danger",
+                  disabled: installed.busy || installed.phrase !== REMOVE_PHRASE,
+                  text: "Remove everything",
+                  onclick: function () { installedAction("remove-everything", { phrase: installed.phrase }); },
+                });
+                var typed = el("input", {
+                  type: "text",
+                  id: "remove-phrase",
+                  "aria-label": "Type " + REMOVE_PHRASE + " to confirm",
+                  placeholder: REMOVE_PHRASE,
+                  autocomplete: "off",
+                });
+                typed.value = installed.phrase;
+                typed.addEventListener("input", function () {
+                  installed.phrase = typed.value;
+                  confirm.disabled = installed.busy || installed.phrase !== REMOVE_PHRASE;
+                });
+                nodes.push(
+                  el("p", { class: "hint", text: "Deletes every workspace, the Omarchy VM and the GUI driver. Do this before removing the plugin, because T3 Code can't clean these up. Stop running Realms first." }),
+                  el("div", { class: "actions" }, [
+                    typed,
+                    confirm,
+                    el("button", { type: "button", disabled: installed.busy, text: "Keep", onclick: function () { installed.confirm = null; installed.phrase = ""; renderInstalled(); } }),
+                  ]),
+                );
+              } else {
+                nodes.push(
+                  el("div", { class: "actions" }, [
+                    el("span", { class: "hint", text: "Using " + formatBytes(data.totalBytes) + " in total" }),
+                    el("button", { type: "button", disabled: installed.busy, text: "Remove everything…", onclick: function () { installed.confirm = "everything"; renderInstalled(); } }),
+                  ]),
+                );
+              }
+            }
+          }
+          if (installed.actionError) nodes.push(el("p", { class: "error", text: installed.actionError }));
+          if (installed.error) nodes.push(el("p", { class: "error", text: installed.error }));
+          $("installed").replaceChildren.apply($("installed"), nodes);
+        }
+
         // ---- wiring --------------------------------------------------------------------
 
         $("refresh").addEventListener("click", function () {
           setNotice("", false);
           load();
+          loadInstalled();
           if (setup.review) reviewSetup();
         });
         document.addEventListener("visibilitychange", function () {
@@ -1367,6 +1555,7 @@
           return;
         }
         load();
+        loadInstalled();
       })();
     </script>
   </body>

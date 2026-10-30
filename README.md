@@ -21,16 +21,16 @@ On the machine running the T3 server:
 
 - Linux x86-64 with systemd and Python 3.11+.
 - **Desktop:** `labwc`, `Xwayland`, `wayvnc`, `grim`, `wlr-randr`, `bubblewrap`, D-Bus and AT-SPI.
-- **Omarchy VM:** QEMU/KVM (`qemu-full`, `edk2-ovmf`, `mtools`), access to `/dev/kvm`, an `~/.ssh/id_ed25519` key, and about 46 GiB of free disk space.
+- **Omarchy VM:** QEMU/KVM (`qemu-full`, `edk2-ovmf`, `mtools`), access to `/dev/kvm`, and about 46 GiB of free disk space.
 - A T3 Code build with the plugin system. It isn't in official T3 Code yet, so for now use the [`plugin-system` branch](https://github.com/Zeus-Deus/t3code/tree/plugin-system).
 
-Setup tells you exactly what's missing. On Arch Linux it can install the missing packages for you after you approve.
+Agents install the GUI driver and the Omarchy VM themselves the first time they need them. Anything that needs root, like system packages, shows up as a card in the chat. On Arch Linux that card can install them for you.
 
 ## Install
 
 1. In T3 Code, open **Settings → Plugins** and add `https://github.com/Zeus-Deus/t3code-realms.git`.
-2. Review and approve it. Grant `ui`, `storage` and `settings`. You can also grant `threads.send` so a waiting agent picks up again once setup finishes.
-3. Open **Realms** from the command palette and run setup.
+2. Review and approve it. Grant `ui`, `storage`, `settings` and `ui.conversation-cards`, which puts setup in the chat.
+3. Grant `threads.send` and tick your projects, so an agent picks up again after a long install. Without a project ticked, a card offers **Continue agent** instead.
 
 ## Using it
 
@@ -41,7 +41,7 @@ The thread's details card then shows **Realm · Live**. Click it to open the Rea
 - **Take control** lets you use the desktop yourself. The agent pauses until you click **Hand back**.
 - **Agent can use it** turns the agent's access to the Realm on or off. Only you can turn it back on.
 - **Stop desktop** shuts it down. Its files are kept, so you can start it again later.
-- **All Realms** lists every Realm. You can stop them there, or delete one you no longer need.
+- **All Realms** lists every Realm. You can stop them there, or delete one you no longer need. Its **Installed** section shows what Realms added to this machine, removes it, and turns automatic installs off.
 
 | Maximized panel | You have control |
 |---|---|
@@ -52,6 +52,8 @@ The thread's details card then shows **Realm · Live**. Click it to open the Rea
 - The agent's normal work (shell, files, git) is unchanged. Realms only adds tools.
 - Sub-agents share their parent thread's Realm instead of starting their own.
 - An idle Realm stops after 30 minutes, and its files are kept.
+- The first Omarchy VM takes about a 5 GiB download and 15–30 minutes. It runs in the background and you can cancel it from the chat.
+- To uninstall, use **Remove everything** on the Realms page first. T3 Code can't clean up VMs for you.
 - The Omarchy VM's disk is unencrypted and has passwordless `sudo`, so keep tokens and personal files out of it.
 
 ## For agents

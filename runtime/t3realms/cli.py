@@ -22,6 +22,7 @@ COMMAND_FIELDS = {
     'delete_snapshot': {'id', 'owner', 'discard'}, 'delete': {'id', 'owner', 'token', 'discard'},
     'job_start': {'kind', 'owner', 'input'}, 'job_status': {'job_id'},
     'job_cancel': {'job_id'}, 'job_list': {'owner'}, 'job_run': {'job_id'},
+    'components': set(), 'component_remove': {'component'}, 'vm_download': set(),
 }
 
 
@@ -40,8 +41,9 @@ def dispatch(home, command, data):
         from .config import Config
         config = Config.from_object(data.get('config', {}))
         if command == 'setup_plan':
+            from .components import halted
             from .setup_plan import plan
-            return plan(home, config)
+            return dict(plan(home, config), halt=halted(home, config.kind))
         if config.kind == 'omarchy-vm':
             from .vm_setup import doctor, plan
             return (doctor if command == 'doctor' else plan)(home, config)
@@ -63,6 +65,11 @@ def dispatch(home, command, data):
     if command == 'driver_status':
         from .diagnostics import driver_status
         return driver_status(home)
+    if command in {'components', 'component_remove', 'vm_download'}:
+        from .components import download_progress, remove, summary
+        if command == 'components':
+            return summary(home)
+        return download_progress(home) if command == 'vm_download' else remove(home, data['component'])
     if command.startswith('job_'):
         from .jobs import Jobs
         jobs = Jobs(home)
